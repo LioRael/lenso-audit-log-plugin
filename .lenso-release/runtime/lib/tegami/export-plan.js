@@ -19,6 +19,10 @@ const SUPPORTED_BUMPS = new Set(["patch", "minor", "major"]);
 function fail(message) {
     throw new TypeError(`cannot export Tegami release plan: ${message}`);
 }
+function copiesCargoWorkspaceSource(cwd, source) {
+    const path = relative(cwd, source);
+    return !path.split(/[\\/]/u).some((segment) => segment === ".git" || segment === "node_modules" || segment === "target");
+}
 function sourceId(options, planId) {
     return options.aliases?.[planId] ?? planId;
 }
@@ -114,7 +118,7 @@ async function assertSupportedCargoSources(cwd) {
     }
     const temp = await mkdtemp(join(tmpdir(), "lenso-cargo-source-check-"));
     try {
-        await cp(cwd, temp, { recursive: true, filter: (source) => !source.includes(`${join(cwd, ".git")}`) });
+        await cp(cwd, temp, { recursive: true, filter: (source) => copiesCargoWorkspaceSource(cwd, source) });
         const { stdout } = await execFileAsync("cargo", ["metadata", "--no-deps", "--offline", "--format-version", "1"], { cwd: temp, maxBuffer: CARGO_METADATA_BUFFER });
         const metadata = JSON.parse(stdout);
         for (const owner of metadata.packages) {
@@ -134,7 +138,7 @@ async function cargoObservations(cwd, pkg, components, planned, locked = true) {
     let cleanup;
     if (!locked) {
         cleanup = await mkdtemp(join(tmpdir(), "lenso-cargo-observe-"));
-        await cp(cwd, cleanup, { recursive: true, filter: (source) => !source.includes(`${join(cwd, ".git")}`) });
+        await cp(cwd, cleanup, { recursive: true, filter: (source) => copiesCargoWorkspaceSource(cwd, source) });
         metadataCwd = cleanup;
     }
     let stdout;
@@ -170,8 +174,15 @@ async function cargoObservations(cwd, pkg, components, planned, locked = true) {
         if (dependency.source && !isCratesIoSource(dependency.source))
             fail(`${id} has unsupported Cargo dependency source ${dependency.source}`);
         const matches = node.deps.filter((entry) => metadata.packages.some((candidate) => candidate.id === entry.pkg && candidate.name === dependency.name));
-        if (matches.length === 0 && dependency.optional)
-            return [];
+        if (matches.length === 0 && dependency.optional) {
+            if (!localVersion)
+                return [];
+            return {
+                id,
+                requirement: normalizeRequirement(dependency.req, id),
+                resolvedVersion: localVersion,
+            };
+        }
         if (matches.length !== 1)
             fail(`ambiguous cargo lock resolution for ${id}`);
         const resolved = metadata.packages.find((item) => item.id === matches[0].pkg);
@@ -344,6 +355,41 @@ async function restoreSnapshot(cwd, snapshot) {
         }
     }
 }
+async function restoreIgnoredPackageFiles(options, packages, snapshot) {
+    const ignored = new Set(options.ignore ?? []);
+    const restore = new Map();
+    for (const pkg of packages.values()) {
+        if (!ignored.has(pkg.id) && !ignored.has(pkg.name))
+            continue;
+        for (const path of [
+            join(pkg.path, pkg.manager === "cargo" ? "Cargo.toml" : "package.json"),
+            join(pkg.path, "CHANGELOG.md"),
+        ]) {
+            if (snapshot.has(path))
+                restore.set(path, snapshot.get(path));
+        }
+    }
+    await restoreSnapshot(options.cwd, restore);
+}
+async function preserveHistoricalChangelogs(options, releasePackages, packages, snapshot) {
+    const paths = new Set(releasePackages.map((item) => {
+        const pkg = packages.get(sourceId(options, item.id));
+        if (!pkg)
+            fail(`applied package ${item.id} was not captured`);
+        return join(pkg.path, "CHANGELOG.md");
+    }));
+    for (const path of paths) {
+        const before = snapshot.get(path);
+        if (!before || before.length === 0)
+            continue;
+        const after = await safeRead(options.cwd, path);
+        if (after.indexOf(before) !== -1)
+            continue;
+        const separator = after.length === 0 || after.toString("utf8").endsWith("\n\n") ? Buffer.alloc(0)
+            : after.toString("utf8").endsWith("\n") ? Buffer.from("\n") : Buffer.from("\n\n");
+        await restoreSnapshot(options.cwd, new Map([[path, Buffer.concat([after, separator, before])]]));
+    }
+}
 async function verifyApplied(options, releasePackages, packages) {
     const { cwd } = options;
     const lock = await lstat(join(cwd, ".tegami/publish-lock.yaml"));
@@ -439,19 +485,6 @@ async function verifyGeneratedFiles(options, plan, packages) {
         if (item.sha256 !== plan.generatedFiles[index].sha256)
             fail(`generated file digest mismatch for ${item.path}`);
     }
-    const expectedSet = new Set(expected);
-    for (const pkg of packages.values()) {
-        const changelogPath = relative(cwd, join(pkg.path, "CHANGELOG.md"));
-        try {
-            await lstat(join(cwd, changelogPath));
-            if (!expectedSet.has(changelogPath))
-                fail(`unexpected generated file ${changelogPath}`);
-        }
-        catch (error) {
-            if (error.code !== "ENOENT")
-                throw error;
-        }
-    }
 }
 async function readExisting(path) {
     try {
@@ -474,7 +507,7 @@ async function verifyExisting(options, plan, packages) {
         if (!pkg || !metadata || pkg.version !== item.nextVersion || metadata.releaseGroup !== item.releaseGroup || metadata.userFacing !== item.userFacing) {
             fail("persisted plan does not match current workspace");
         }
-        observations.set(item.id, item.id.startsWith("artifact:")
+        observations.set(item.id, item.id.startsWith("artifact:") || item.id.startsWith("oci:")
             ? []
             : await observeDependencies(options.cwd, pkg, options.components, planned, false));
     }
@@ -525,20 +558,22 @@ export async function exportReleasePlan(options) {
         await verifyExisting(options, existing, captured);
         return existing;
     }
-    const observations = new Map();
     const planned = new Map(pending.map((item) => [item.id, item.nextVersion]));
-    for (const item of pending) {
-        const pkg = captured.get(sourceId(options, item.id));
-        if (!pkg)
-            fail(`Tegami package ${sourceId(options, item.id)} was not captured`);
-        observations.set(item.id, item.id.startsWith("artifact:")
-            ? []
-            : await observeDependencies(options.cwd, pkg, options.components, planned));
-    }
-    const releasePackages = buildPackages(options, pending, observations);
     const snapshot = await snapshotWorkspace(options.cwd, captured.values());
     try {
         await draft.apply();
+        await restoreIgnoredPackageFiles(options, captured, snapshot);
+        await preserveHistoricalChangelogs(options, pending, captured, snapshot);
+        const observations = new Map();
+        for (const item of pending) {
+            const pkg = captured.get(sourceId(options, item.id));
+            if (!pkg)
+                fail(`Tegami package ${sourceId(options, item.id)} was not captured`);
+            observations.set(item.id, item.id.startsWith("artifact:") || item.id.startsWith("oci:")
+                ? []
+                : await observeDependencies(options.cwd, pkg, options.components, planned));
+        }
+        const releasePackages = buildPackages(options, pending, observations);
         await verifyApplied(options, releasePackages, captured);
         const generatedFiles = await collectGeneratedFiles(options.cwd, await expectedGeneratedPaths(options, releasePackages, captured));
         const plan = buildPlan(options, releasePackages, generatedFiles);

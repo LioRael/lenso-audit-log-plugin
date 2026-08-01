@@ -7,9 +7,9 @@ export const COMPONENT_REPOSITORIES = [
     "LioRael/lenso-cli",
     "LioRael/lenso-organization-module",
     "LioRael/lenso-release",
-    "LioRael/lenso-runtime-console"
+    "LioRael/lenso-console"
 ];
-export const COMPONENT_REGISTRIES = ["crates-io", "github-release", "npm"];
+export const COMPONENT_REGISTRIES = ["crates-io", "ghcr", "github-release", "npm"];
 export const RELEASE_GROUPS = [
     "foundation",
     "modules",
@@ -26,12 +26,18 @@ const PACKAGE_KEYS = new Set([
     "releaseGroup",
     "userFacing",
     "publishable",
-    "dependencies"
+    "dependencies",
+    "registryPath"
 ]);
+const PACKAGE_REQUIRED_KEYS = new Set([...PACKAGE_KEYS].filter((key) => key !== "registryPath"));
 const REPOSITORY_SET = new Set(COMPONENT_REPOSITORIES);
 const REGISTRY_SET = new Set(COMPONENT_REGISTRIES);
 const RELEASE_GROUP_SET = new Set(RELEASE_GROUPS);
-const COMPONENT_ID = /^(?:cargo:[a-z0-9]+(?:-[a-z0-9]+)*|npm:@lenso\/[a-z0-9]+(?:-[a-z0-9]+)*|artifact:[a-z0-9]+(?:-[a-z0-9]+)*|catalog:[a-z0-9]+(?:-[a-z0-9]+)*)$/u;
+const NON_PUBLISHABLE_COMPONENTS = new Set([
+    "cargo:lenso-operator",
+    "cargo:provider-fixture"
+]);
+const COMPONENT_ID = /^(?:cargo:[a-z0-9]+(?:-[a-z0-9]+)*|npm:@lenso\/[a-z0-9]+(?:-[a-z0-9]+)*|artifact:[a-z0-9]+(?:-[a-z0-9]+)*|oci:[a-z0-9]+(?:-[a-z0-9]+)*|catalog:[a-z0-9]+(?:-[a-z0-9]+)*)$/u;
 function fail(message) {
     throw new TypeError(`invalid component registry: ${message}`);
 }
@@ -41,12 +47,12 @@ function record(value, context) {
     }
     return value;
 }
-function exactKeys(value, allowed, context) {
+function exactKeys(value, allowed, context, required = allowed) {
     for (const key of Object.keys(value)) {
         if (!allowed.has(key))
             fail(`${context} has unknown field ${key}`);
     }
-    for (const key of allowed) {
+    for (const key of required) {
         if (!(key in value))
             fail(`${context} is missing ${key}`);
     }
@@ -80,7 +86,7 @@ function uniqueIds(values, context) {
 }
 function parseComponent(value, index) {
     const raw = record(value, `packages[${index}]`);
-    exactKeys(raw, PACKAGE_KEYS, `packages[${index}]`);
+    exactKeys(raw, PACKAGE_KEYS, `packages[${index}]`, PACKAGE_REQUIRED_KEYS);
     const id = componentId(raw.id, `packages[${index}].id`);
     const repository = string(raw.repository, `${id}.repository`);
     const registry = string(raw.registry, `${id}.registry`);
@@ -95,12 +101,15 @@ function parseComponent(value, index) {
         ? "crates-io"
         : id.startsWith("npm:")
             ? "npm"
-            : "github-release";
+            : id.startsWith("oci:") ? "ghcr" : "github-release";
     if (registry !== expectedRegistry) {
         fail(`${id} registry ${registry} is inconsistent with its ID`);
     }
+    const registryPath = raw.registryPath === undefined ? undefined : string(raw.registryPath, `${id}.registryPath`);
+    if (id.startsWith("oci:") ? !registryPath || !/^[a-z0-9]+(?:[._/-][a-z0-9]+)*$/u.test(registryPath) || registryPath.includes("..") : registryPath !== undefined)
+        fail(`${id} has an inconsistent registryPath`);
     const publishable = boolean(raw.publishable, `${id}.publishable`);
-    if ((id === "cargo:lenso-operator") === publishable) {
+    if (NON_PUBLISHABLE_COMPONENTS.has(id) === publishable) {
         fail(`${id} has an inconsistent publishable value`);
     }
     return {
@@ -110,7 +119,8 @@ function parseComponent(value, index) {
         releaseGroup: releaseGroup,
         userFacing: boolean(raw.userFacing, `${id}.userFacing`),
         publishable,
-        dependencies: uniqueIds(array(raw.dependencies, `${id}.dependencies`), `${id}.dependencies`)
+        dependencies: uniqueIds(array(raw.dependencies, `${id}.dependencies`), `${id}.dependencies`),
+        ...(registryPath ? { registryPath } : {})
     };
 }
 export async function loadComponents(path) {

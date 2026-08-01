@@ -191,13 +191,15 @@ function packageEcosystem(packageId, path) {
         return "npm";
     if (/^artifact:.+/u.test(result))
         return "artifact";
-    fail(path, "must use a cargo:, npm:, or artifact: component ID");
+    if (/^oci:.+/u.test(result))
+        return "oci";
+    fail(path, "must use a cargo:, npm:, artifact:, or oci: component ID");
 }
 function registryIntegrity(value, ecosystem, path) {
     const result = string(value, path);
-    if (ecosystem === "artifact") {
+    if (ecosystem === "artifact" || ecosystem === "oci") {
         if (!/^sha256:[0-9a-f]{64}$/u.test(result))
-            fail(path, "must be a canonical artifact SHA-256 digest");
+            fail(path, `must be a canonical ${ecosystem} SHA-256 digest`);
         return result;
     }
     if (ecosystem === "cargo") {
@@ -344,7 +346,7 @@ export function assertReleaseEvent(value) {
         ? [...base, "packages"]
         : eventType === "lenso-publish-receipt"
             ? [...base, "correlationId", "receipt"]
-            : base;
+            : [...base, "environment"];
     const event = record(value, "releaseEvent", keys);
     literal(event.schema, "releaseEvent.schema", "lenso.release-event.v1");
     sha256(event.eventId, "releaseEvent.eventId");
@@ -357,7 +359,10 @@ export function assertReleaseEvent(value) {
     url(event.planUrl, "releaseEvent.planUrl");
     sha256(event.planSha256, "releaseEvent.planSha256");
     oid(event.releaseCommit, "releaseEvent.releaseCommit");
-    if (eventType === "lenso-publish-requested") {
+    if (eventType === "lenso-plan-ready") {
+        enumeration(event.environment, "releaseEvent.environment", ["shadow", "production"]);
+    }
+    else if (eventType === "lenso-publish-requested") {
         const packages = array(event.packages, "releaseEvent.packages").map((item, index) => assertEventPackage(item, `releaseEvent.packages[${index}]`));
         unique(packages, "id", "releaseEvent.packages");
     }
