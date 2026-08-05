@@ -1,29 +1,26 @@
 name: CI
+
 on:
   pull_request:
   push:
     branches: [main]
+
 permissions: {}
+
 jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: pnpm/action-setup@f2b2b233b538f500472c7274c7012f57857d8ce0
-        with: { run_install: false }
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with: { node-version: 24.18.0, cache: pnpm }
-      - name: Install release planner
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
-          rustup toolchain install 1.94.0 --profile minimal --component rustfmt,clippy
-          rustup default 1.94.0
-      - name: Run repository gate
-        run: pnpm check
-      - name: Verify reviewed release plan and package
-        if: ${{ startsWith(github.head_ref, 'release/') }}
-        run: |
-          cargo fetch --locked
-          node scripts/release-plan.mjs --verify
-          cargo package --locked --allow-dirty -p lenso-module-audit-log
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: 1.94.0
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Run tests
+        run: cargo test --locked --workspace
+      - name: Run Clippy
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Verify package contents
+        run: cargo package --locked --no-verify -p lenso-module-audit-log

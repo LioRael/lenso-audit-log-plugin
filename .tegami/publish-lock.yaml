@@ -1,9 +1,0 @@
-core:changelogs:
-  - content: "---\npackages:\n  lenso-module-audit-log:\n    type: patch\n---\n\n### Fixes\n\nValidate the complete Shadow release chain with ancestry-aware preflight.\n"
-    filename: release.md
-    v: 0.0.0
-core:packages:
-  - changelogIds:
-      - release.md
-    id: cargo:lenso-module-audit-log
-    updated: true
