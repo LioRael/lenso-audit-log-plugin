@@ -21,17 +21,14 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 0
-          # release-plz 0.3.125 pushes the temporary release branch before
-          # creating the verified commit through the GitHub API.
-          persist-credentials: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
       - &install-rust
         name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: 1.94.0
       - name: Publish released packages
-        uses: release-plz/action@476794ede164c5137bfc3a1dc6ed3675275690f9 # v0.5.99
+        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release
         env:
@@ -51,7 +48,7 @@ jobs:
       - *checkout
       - *install-rust
       - name: Create release PR
-        uses: release-plz/action@476794ede164c5137bfc3a1dc6ed3675275690f9 # v0.5.99
+        uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release-pr
         env:
