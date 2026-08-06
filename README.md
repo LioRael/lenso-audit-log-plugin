@@ -48,3 +48,10 @@ cargo clippy --locked -p lenso-module-audit-log --all-targets -- -D warnings
 
 DB-backed tests use `DATABASE_URL` when it is set. Without it, the repository
 still runs the pure Rust coverage and skips the Postgres integration cases.
+
+## Release
+
+Release-plz creates a release pull request from changes merged to `main`. After
+that pull request is merged, the same workflow publishes the crate through
+crates.io Trusted Publishing and creates the GitHub Release. There is no manual
+publisher workflow or repository registry token in the normal release path.

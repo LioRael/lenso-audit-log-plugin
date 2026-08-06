@@ -1,8 +1,0 @@
-{
-  "schema": "lenso.repository-config.v1",
-  "repository": "LioRael/lenso-audit-log-module",
-  "ignore": [
-    "@lenso/audit-log-release-workspace",
-    "npm:@lenso/audit-log-release-workspace"
-  ]
-}
