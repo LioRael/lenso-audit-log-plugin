@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["events", "next_cursor"],
+  "properties": {
+    "events": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "audit-event.schema.json" }
+    },
+    "next_cursor": {
+      "type": ["object", "null"],
+      "required": ["occurred_at", "id"],
+      "properties": {
+        "occurred_at": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

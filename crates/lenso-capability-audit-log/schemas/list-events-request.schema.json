@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["limit"],
+  "properties": {
+    "event_name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "source_instance": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "outcome": { "type": "string", "enum": ["success", "failure", "denied"] },
+    "severity": { "type": "string", "enum": ["info", "warning", "critical"] },
+    "actor_kind": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "actor_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "scope_module": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "scope_type": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "scope_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "resource_type": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "resource_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "correlation_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "occurred_after": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "occurred_before": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "cursor": {
+      "type": "object",
+      "required": ["occurred_at", "id"],
+      "properties": {
+        "occurred_at": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 }
+      },
+      "additionalProperties": false
+    },
+    "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+  },
+  "additionalProperties": false
+}
