@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, io};
 
 use chrono::{DateTime, Datelike, Utc};
 use lenso_capability_audit_log::{
@@ -11,13 +11,42 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
-const MAX_METADATA_BYTES: usize = 64 * 1024;
+pub(crate) const MAX_METADATA_BYTES: usize = 64 * 1024;
 const MAX_METADATA_CONTAINER_ITEMS: usize = 1_024;
 const MAX_METADATA_DEPTH: usize = 32;
 const MAX_METADATA_KEY_CHARS: usize = 256;
 const MAX_METADATA_NODES: usize = 16_384;
 const MAX_METADATA_STRING_CHARS: usize = 65_536;
 const MAX_TIMESTAMP_CHARS: usize = 64;
+
+struct BoundedJsonCounter {
+    encoded_bytes: usize,
+    limit: usize,
+}
+
+impl BoundedJsonCounter {
+    const fn new(limit: usize) -> Self {
+        Self {
+            encoded_bytes: 0,
+            limit,
+        }
+    }
+}
+
+impl io::Write for BoundedJsonCounter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.encoded_bytes = self
+            .encoded_bytes
+            .checked_add(bytes.len())
+            .filter(|encoded_bytes| *encoded_bytes <= self.limit)
+            .ok_or_else(|| io::Error::other("audit metadata encoded size limit exceeded"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -579,8 +608,9 @@ fn metadata_within_wire_bounds(metadata: &Value) -> bool {
         }
     }
 
+    let mut counter = BoundedJsonCounter::new(MAX_METADATA_BYTES);
     lenso_contract_runtime::validate_portable_json_value(metadata).is_ok()
-        && serde_json::to_vec(metadata).is_ok_and(|encoded| encoded.len() <= MAX_METADATA_BYTES)
+        && serde_json::to_writer(&mut counter, metadata).is_ok()
 }
 
 #[cfg(test)]
