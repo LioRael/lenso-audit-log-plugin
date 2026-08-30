@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "event_name",
+    "action",
+    "outcome",
+    "severity",
+    "actor",
+    "scope",
+    "resource",
+    "request_context",
+    "reason",
+    "metadata",
+    "occurred_at"
+  ],
+  "properties": {
+    "event_name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "action": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "outcome": { "type": "string", "enum": ["success", "failure", "denied"] },
+    "severity": { "type": "string", "enum": ["info", "warning", "critical"] },
+    "actor": {
+      "type": "object",
+      "required": ["kind", "id", "display"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+        "display": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 }
+      },
+      "additionalProperties": false
+    },
+    "scope": {
+      "type": ["object", "null"],
+      "required": ["module", "scope_type", "id", "display"],
+      "properties": {
+        "module": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+        "scope_type": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "display": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 }
+      },
+      "additionalProperties": false
+    },
+    "resource": {
+      "type": ["object", "null"],
+      "required": ["resource_type", "id", "display"],
+      "properties": {
+        "resource_type": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "display": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 }
+      },
+      "additionalProperties": false
+    },
+    "request_context": {
+      "type": ["object", "null"],
+      "required": ["correlation_id", "causation_id", "request_id", "story_id"],
+      "properties": {
+        "correlation_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+        "causation_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+        "request_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+        "story_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 }
+      },
+      "additionalProperties": false
+    },
+    "reason": { "type": ["string", "null"], "minLength": 1, "maxLength": 2048 },
+    "metadata": {
+      "type": "object",
+      "maxProperties": 1024,
+      "propertyNames": { "type": "string", "maxLength": 256 },
+      "additionalProperties": true,
+      "x-lenso-max-container-items": 1024,
+      "x-lenso-max-depth": 32,
+      "x-lenso-max-encoded-bytes": 65536,
+      "x-lenso-max-nodes": 16384,
+      "x-lenso-max-string-length": 65536,
+      "x-lenso-sensitive": true
+    },
+    "occurred_at": { "type": "string", "format": "date-time", "maxLength": 64 }
+  },
+  "additionalProperties": false
+}

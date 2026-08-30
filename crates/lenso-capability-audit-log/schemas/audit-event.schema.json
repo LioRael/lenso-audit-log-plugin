@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "id",
+    "event_name",
+    "source_instance",
+    "action",
+    "outcome",
+    "severity",
+    "actor_kind",
+    "actor_id",
+    "actor_display",
+    "scope_module",
+    "scope_type",
+    "scope_id",
+    "scope_display",
+    "resource_type",
+    "resource_id",
+    "resource_display",
+    "correlation_id",
+    "causation_id",
+    "request_id",
+    "story_id",
+    "reason",
+    "metadata",
+    "occurred_at",
+    "created_at"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "event_name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "source_instance": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "description": "Lenso caller Instance identity derived by the provider"
+    },
+    "action": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "outcome": {
+      "type": "string",
+      "maxLength": 7,
+      "enum": ["success", "failure", "denied"]
+    },
+    "severity": {
+      "type": "string",
+      "maxLength": 8,
+      "enum": ["info", "warning", "critical"]
+    },
+    "actor_kind": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "actor_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "actor_display": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "scope_module": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+    "scope_type": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+    "scope_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "scope_display": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "resource_type": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+    "resource_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "resource_display": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "correlation_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "causation_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "request_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "story_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 },
+    "reason": { "type": ["string", "null"], "minLength": 1, "maxLength": 2048 },
+    "metadata": {
+      "type": "object",
+      "maxProperties": 1024,
+      "propertyNames": { "type": "string", "maxLength": 256 },
+      "additionalProperties": true,
+      "x-lenso-max-container-items": 1024,
+      "x-lenso-max-depth": 32,
+      "x-lenso-max-encoded-bytes": 65536,
+      "x-lenso-max-nodes": 16384,
+      "x-lenso-max-string-length": 65536,
+      "x-lenso-sensitive": true
+    },
+    "occurred_at": { "type": "string", "format": "date-time", "maxLength": 64 },
+    "created_at": { "type": "string", "format": "date-time", "maxLength": 64 }
+  },
+  "additionalProperties": false
+}
