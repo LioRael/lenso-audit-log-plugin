@@ -442,6 +442,23 @@ fn metadata_validation_is_bounded_portable_and_debug_redacted() {
         NewAuditEvent::from_request(recursive_overflow, "consumer").unwrap_err(),
         AppendEventError::InvalidEvent
     );
+
+    let mut exact_encoded_boundary = append_request();
+    exact_encoded_boundary.metadata = BTreeMap::from([(
+        "blob".to_owned(),
+        json!("x".repeat(super::model::MAX_METADATA_BYTES - 11)),
+    )]);
+    assert!(NewAuditEvent::from_request(exact_encoded_boundary, "consumer").is_ok());
+
+    let mut over_encoded_boundary = append_request();
+    over_encoded_boundary.metadata = BTreeMap::from([(
+        "blob".to_owned(),
+        json!("x".repeat(super::model::MAX_METADATA_BYTES - 10)),
+    )]);
+    assert_eq!(
+        NewAuditEvent::from_request(over_encoded_boundary, "consumer").unwrap_err(),
+        AppendEventError::InvalidEvent
+    );
 }
 
 #[test]
