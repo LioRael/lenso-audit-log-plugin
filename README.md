@@ -131,7 +131,6 @@ cargo fmt --all -- --check
 cargo check --locked --workspace --all-targets
 cargo test --locked --workspace
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-./scripts/check-repository-boundary.sh
 ```
 
 PostgreSQL acceptance additionally requires `LENSO_POSTGRES_TEST_URL` naming a
