@@ -1343,6 +1343,14 @@ mod unit_tests {
     }
 
     #[test]
+    fn migration_bytes_remain_stable_for_legacy_adoption() {
+        assert_eq!(
+            format!("{:x}", Sha256::digest(AUDIT_LOG_MIGRATION_SQL.as_bytes())),
+            "f6f6b84e1d184eaaac746e68c9cfa65ff864d5439c8e50668a381a23cb984199"
+        );
+    }
+
+    #[test]
     fn catalog_expression_normalization_preserves_meaningful_tokens() {
         assert_eq!(
             normalize_sql("CHECK ((outcome = ANY (ARRAY['success'::text])))"),
