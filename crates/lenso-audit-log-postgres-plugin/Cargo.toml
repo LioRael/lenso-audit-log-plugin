@@ -24,7 +24,7 @@ root-slot = "audit"
 chrono.workspace = true
 lenso.workspace = true
 lenso-capability-audit-log = { path = "../lenso-capability-audit-log", version = "0.1.0" }
-lenso-capability-secrets = { version = "0.1.2", git = "https://github.com/LioRael/lenso-secrets-plugin", rev = "967fa0d2908b58c24a4b1ad26103a3d9173bbac0" }
+lenso-capability-secrets = { version = "0.1.2" }
 lenso-contract-runtime.workspace = true
 lenso-postgres-kit.workspace = true
 serde.workspace = true
