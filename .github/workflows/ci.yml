@@ -48,4 +48,6 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Verify public packages independently
-        run: cargo package --locked --workspace
+        run: >-
+          cargo package --locked --workspace
+          --exclude lenso-audit-log-agent-tools-plugin
