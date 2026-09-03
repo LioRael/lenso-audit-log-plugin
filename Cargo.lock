@@ -766,7 +766,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-audit-log-postgres-plugin"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "lenso",
@@ -810,7 +810,7 @@ dependencies = [
 
 [[package]]
 name = "lenso-capability-audit-log"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "futures",
  "lenso-contract-runtime",
