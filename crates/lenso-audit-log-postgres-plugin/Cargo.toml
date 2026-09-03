@@ -1,6 +1,6 @@
 [package]
 name = "lenso-audit-log-postgres-plugin"
-version = "0.1.0"
+version = "0.1.1"
 edition.workspace = true
 license.workspace = true
 homepage.workspace = true
@@ -23,7 +23,7 @@ root-slot = "audit"
 [dependencies]
 chrono.workspace = true
 lenso.workspace = true
-lenso-capability-audit-log = { path = "../lenso-capability-audit-log", version = "0.1.0" }
+lenso-capability-audit-log = { path = "../lenso-capability-audit-log", version = "0.1.1" }
 lenso-capability-secrets = { version = "0.1.2" }
 lenso-contract-runtime.workspace = true
 lenso-postgres-kit.workspace = true
