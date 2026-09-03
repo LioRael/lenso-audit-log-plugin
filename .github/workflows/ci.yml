@@ -37,7 +37,11 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Check formatting
         run: cargo fmt --all -- --check
-      - name: Check all targets and generated projection freshness
+      - name: Install exact contract projection checker
+        run: cargo install --locked --version '=0.6.9' lenso-contract-codegen
+      - name: Check generated Capability freshness
+        run: lenso-contract-codegen workspace check --manifest-path Cargo.toml
+      - name: Check all targets
         run: cargo check --locked --workspace --all-targets
       - name: Run tests
         run: cargo test --locked --workspace --features postgres-acceptance

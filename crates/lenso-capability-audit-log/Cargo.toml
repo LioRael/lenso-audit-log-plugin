@@ -11,7 +11,6 @@ description = "Generated durable Audit Log Capability contract for Lenso applica
 readme = "../../README.md"
 categories = ["development-tools", "web-programming"]
 keywords = ["lenso", "plugin", "audit", "contract"]
-build = "build.rs"
 
 [package.metadata.lenso.contract]
 descriptor = "capability.json"
@@ -25,9 +24,6 @@ lenso-kernel.workspace = true
 lenso-plugin-authoring.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-[build-dependencies]
-lenso-contract-codegen.workspace = true
 
 [lints]
 workspace = true
