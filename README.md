@@ -11,6 +11,11 @@ The workspace publishes two packages:
 - `lenso-audit-log-postgres-plugin`: the native Plugin implementation with
   Plugin ID `lenso.audit-log.postgres`.
 
+The workspace also contains private `lenso-audit-log-agent-tools-plugin`, a
+stateless adapter that projects `list_events` and `get_event` into two
+parallel-safe Console Agent Tools. It never exposes `append_event`; business
+Plugins remain the only writers of their own evidence.
+
 ## Capability
 
 `lenso.audit-log@1` is a request Capability with three terminal operations:
@@ -118,9 +123,10 @@ surface are not retained as a compatibility shim. Applications on the v0.3
 legacy lane must keep using their historical dependency until they migrate to
 Plugin selection, Capability requirements, and generated Clients.
 
-There is no Plugin manifest admin/Console hook. A product that needs an audit
-viewer binds `lenso.audit-log@1` from its own UI or Agent-facing Plugin and calls
-the generated read operations.
+There is no Plugin manifest admin/Console hook. A product UI that needs an audit
+viewer binds `lenso.audit-log@1` and calls the generated read operations. The
+private Agent Tool adapter provides the corresponding read-only Console Agent
+surface without owning state or changing reader authorization.
 
 ## Development
 

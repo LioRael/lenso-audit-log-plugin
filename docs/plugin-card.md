@@ -113,6 +113,12 @@ business Capability use case owned by the target UI or Agent-facing Plugin. It
 binds `lenso.audit-log@1` and uses the generated Client like every other
 consumer.
 
+The private `lenso.audit-log.agent-tools` adapter exposes only `list_events`
+and `get_event` as parallel-safe Console Agent Tools. It forwards the invocation
+context unchanged, so the PostgreSQL provider's exact `reader_instances`
+admission remains authoritative. It does not expose `append_event`, persist
+state, inspect private tables, or create a second audit policy.
+
 ## Deletion boundary
 
 To remove Audit Log behavior from an App:
