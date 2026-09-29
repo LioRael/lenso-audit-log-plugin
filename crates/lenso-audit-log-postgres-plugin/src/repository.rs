@@ -119,6 +119,7 @@ const INSERT_EVENT_SQL: &str = r"
         $22,
         $23
     )
+    on conflict (id) do nothing
     returning
         id,
         event_name,
@@ -148,8 +149,13 @@ const INSERT_EVENT_SQL: &str = r"
 
 pub(crate) async fn append_event(
     postgres: &OwnedPostgres,
-    event: NewAuditEvent,
+    mut event: NewAuditEvent,
 ) -> Result<StoredEvent, RepositoryError> {
+    event.occurred_at = DateTime::from_timestamp_micros(event.occurred_at.timestamp_micros())
+        .ok_or(RepositoryError::InvalidStoredValue {
+            field: "occurred_at",
+        })?;
+    let expected = StoredEvent::from_event(event.clone(), Utc::now());
     let metadata = Value::Object(event.metadata.clone().into_iter().collect());
     let row = sqlx::query(INSERT_EVENT_SQL)
         .bind(event.id)
@@ -175,9 +181,21 @@ pub(crate) async fn append_event(
         .bind(event.reason)
         .bind(metadata)
         .bind(event.occurred_at)
-        .fetch_one(postgres.pool())
+        .fetch_optional(postgres.pool())
         .await?;
-    map_event_row(&row)
+    if let Some(row) = row {
+        return map_event_row(&row);
+    }
+    let stored = get_event(postgres, &expected.id)
+        .await?
+        .ok_or(RepositoryError::InvalidStoredValue { field: "id" })?;
+    let mut expected = expected;
+    expected.created_at = stored.created_at;
+    if expected == stored {
+        Ok(stored)
+    } else {
+        Err(RepositoryError::IdempotencyConflict)
+    }
 }
 
 pub(crate) async fn list_events(
@@ -376,6 +394,8 @@ pub(crate) fn project_stored_metadata(metadata: Value) -> BTreeMap<String, Value
 
 #[derive(Debug, Error)]
 pub(crate) enum RepositoryError {
+    #[error("the event delivery key was reused with a different intent")]
+    IdempotencyConflict,
     #[error("PostgreSQL audit operation failed")]
     Database(#[from] sqlx::Error),
     #[error("stored Audit Event field `{field}` is invalid")]

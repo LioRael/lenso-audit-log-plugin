@@ -3,25 +3,40 @@ use std::{fmt, rc::Rc};
 use futures::future::LocalBoxFuture;
 use lenso_kernel::{InvocationContext, NativeRequestEndpoint, NativeRequestFuture, NativeRequestHandle, PluginDependencies, RequestCapability, RuntimeFailure};
 
-use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany};
+use lenso_plugin_authoring::{BoundCapabilityClient, CapabilityClient, CapabilityClientMany, CapabilityReference};
 pub const CAPABILITY_ID: &str = "lenso.audit-log@1";
-pub const DESCRIPTOR_VERSION: &str = "1.0.0";
+pub const DESCRIPTOR_VERSION: &str = "1.1.0";
+pub const DESCRIPTOR_DIGEST: &str = "sha256:db6e511d7433f6806d97ffe64d560fc003c77d60ea4154051527cf1a69f60670";
 pub const PORTABLE: bool = true;
 pub const CROSS_LANE_TRANSFER: bool = true;
 pub const AUDIT_LOG_CAPABILITY_ID: &str = CAPABILITY_ID;
 pub const AUDIT_LOG_DESCRIPTOR_VERSION: &str = DESCRIPTOR_VERSION;
+pub const AUDIT_LOG_DESCRIPTOR_DIGEST: &str = DESCRIPTOR_DIGEST;
+pub const AUDIT_LOG_CONTRACT: CapabilityReference<AuditLogClient> = CapabilityReference::new(CAPABILITY_ID, DESCRIPTOR_VERSION, DESCRIPTOR_DIGEST);
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_provided_audit_log { () => { "{\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.0.0\",\"operations\":[\"append_event\",\"get_event\",\"list_events\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
+macro_rules! __lenso_provided_audit_log { () => { "{\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.1.0\",\"operations\":[\"append_event\",\"get_event\",\"list_events\"],\"operation_kinds\":{},\"default_admission\":{\"queue_capacity\":0,\"max_concurrency\":1},\"operation_admissions\":{},\"event_admission\":null,\"cross_lane_transfer\":true}" }; }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_audit_log_client { () => { "{\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"one\"}" }; }
+macro_rules! __lenso_required_audit_log_client {
+    () => { "{\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"one\"}" };
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"one\"}") };
+}
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __lenso_required_many_audit_log_client { () => { "{\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.0.0\",\"cardinality\":\"many\"}" }; }
+macro_rules! __lenso_required_optional_audit_log_client {
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"optional\"}") };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_required_many_audit_log_client {
+    () => { "{\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"many\"}" };
+    ($requirement_id:literal) => { concat!("{\"requirement_id\":", stringify!($requirement_id), ",\"capability_id\":\"lenso.audit-log@1\",\"descriptor_version\":\"1.1.0\",\"cardinality\":\"many\"}") };
+}
 
 pub const APPEND_EVENT_OPERATION: &str = "append_event";
 pub const GET_EVENT_OPERATION: &str = "get_event";
@@ -41,6 +56,9 @@ pub struct AppendEventRequest {
     #[serde(rename = "event_name")]
     #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
     pub event_name: String,
+    #[serde(rename = "idempotency_key")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idempotency_key: Option<String>,
     #[serde(rename = "metadata")]
     #[serde(deserialize_with = "lenso_contract_runtime::serde::deserialize_required")]
     pub metadata: std::collections::BTreeMap<String, serde_json::Value>,
@@ -74,6 +92,7 @@ impl fmt::Debug for AppendEventRequest {
             .field("action", &self.action)
             .field("actor", &self.actor)
             .field("event_name", &self.event_name)
+            .field("idempotency_key", &self.idempotency_key)
             .field("metadata", &"<redacted>")
             .field("occurred_at", &self.occurred_at)
             .field("outcome", &self.outcome)
@@ -301,6 +320,7 @@ pub enum AppendEventResponseEventSeverity {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppendEventError {
+    IdempotencyConflict,
     InvalidEvent,
     Unauthorized,
     Unknown(UnknownDomainError),
@@ -769,6 +789,7 @@ impl serde::Serialize for AppendEventError {
     {
         use serde::ser::SerializeMap;
         match self {
+            Self::IdempotencyConflict => serializer.serialize_str("idempotency_conflict"),
             Self::InvalidEvent => serializer.serialize_str("invalid_event"),
             Self::Unauthorized => serializer.serialize_str("unauthorized"),
             Self::Unknown(value) => {
@@ -794,6 +815,7 @@ impl<'de> serde::Deserialize<'de> for AppendEventError {
         let value = <serde_json::Value as serde::Deserialize>::deserialize(deserializer)?;
         match value {
             serde_json::Value::String(code) => match code.as_str() {
+                "idempotency_conflict" => Ok(Self::IdempotencyConflict),
                 "invalid_event" => Ok(Self::InvalidEvent),
                 "unauthorized" => Ok(Self::Unauthorized),
                 _ => Ok(Self::Unknown(UnknownDomainError { code, payload: None, extra: std::collections::BTreeMap::new() })),
@@ -1056,6 +1078,71 @@ macro_rules! __lenso_native_lower_audit_log {
     };
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_object_audit_log {
+    ($object:ty, $plugin:ty, $support:path) => {
+        use $support as __LensoNativeSupportAuditLog;
+        impl $crate::AuditLogProvider for $object {
+        fn append_event(&self, context: __LensoNativeSupportAuditLog::InvocationContext, request: $crate::AppendEventRequest) -> __LensoNativeSupportAuditLog::NativeRequestFuture<$crate::AuditLogAppendEvent> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                let result = <$plugin>::append_event(plugin.as_ref(), context, request).await;
+                $crate::__LensoIntoAuditLogAppendEventResult::__lenso_into_result(result)
+            })
+        }
+        fn get_event(&self, context: __LensoNativeSupportAuditLog::InvocationContext, request: $crate::GetEventRequest) -> __LensoNativeSupportAuditLog::NativeRequestFuture<$crate::AuditLogGetEvent> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                let result = <$plugin>::get_event(plugin.as_ref(), context, request).await;
+                $crate::__LensoIntoAuditLogGetEventResult::__lenso_into_result(result)
+            })
+        }
+        fn list_events(&self, context: __LensoNativeSupportAuditLog::InvocationContext, request: $crate::ListEventsRequest) -> __LensoNativeSupportAuditLog::NativeRequestFuture<$crate::AuditLogListEvents> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                let result = <$plugin>::list_events(plugin.as_ref(), context, request).await;
+                $crate::__LensoIntoAuditLogListEventsResult::__lenso_into_result(result)
+            })
+        }
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __lenso_native_lower_trait_object_audit_log {
+    ($object:ty, $plugin:ty, $support:path) => {
+        use $support as __LensoNativeSupportAuditLog;
+        impl $crate::AuditLogProvider for $object {
+        fn append_event(&self, context: __LensoNativeSupportAuditLog::InvocationContext, request: $crate::AppendEventRequest) -> __LensoNativeSupportAuditLog::NativeRequestFuture<$crate::AuditLogAppendEvent> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                <$plugin as $crate::AuditLogProvider>::append_event(plugin.as_ref(), context, request).await
+            })
+        }
+        fn get_event(&self, context: __LensoNativeSupportAuditLog::InvocationContext, request: $crate::GetEventRequest) -> __LensoNativeSupportAuditLog::NativeRequestFuture<$crate::AuditLogGetEvent> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                <$plugin as $crate::AuditLogProvider>::get_event(plugin.as_ref(), context, request).await
+            })
+        }
+        fn list_events(&self, context: __LensoNativeSupportAuditLog::InvocationContext, request: $crate::ListEventsRequest) -> __LensoNativeSupportAuditLog::NativeRequestFuture<$crate::AuditLogListEvents> {
+            let object = self.clone();
+            ::std::boxed::Box::pin(async move {
+                let plugin = object.get()?;
+                <$plugin as $crate::AuditLogProvider>::list_events(plugin.as_ref(), context, request).await
+            })
+        }
+        }
+    };
+}
+
 #[derive(Debug)]
 struct AuditLogRequestEndpoint { provider: Rc<dyn AuditLogProvider> }
 
@@ -1154,7 +1241,7 @@ macro_rules! __lenso_native_provide_audit_log {
     }};
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct AuditLogClient {
     append_event: NativeRequestHandle<AuditLogAppendEvent>,
     get_event: NativeRequestHandle<AuditLogGetEvent>,
@@ -1163,6 +1250,13 @@ pub struct AuditLogClient {
 impl AuditLogClient {
     pub fn from_dependencies(dependencies: &PluginDependencies) -> Result<Self, RuntimeFailure> {
         <Self as CapabilityClient>::from_dependencies(dependencies)
+    }
+
+    pub fn from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Self, RuntimeFailure> {
+        <Self as CapabilityClient>::from_requirement(dependencies, requirement_id)
     }
 
     pub async fn append_event(&self, request: AppendEventRequest) -> Result<AppendEventResponse, AuditLogAppendEventInvocationError> {
@@ -1217,6 +1311,14 @@ impl CapabilityClient for AuditLogClient {
         })
     }
 
+    fn from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Self, RuntimeFailure> {
+        let dependencies = dependencies.requirement(requirement_id)?;
+        Self::from_dependencies(&dependencies)
+    }
+
     fn already_connected() -> RuntimeFailure {
         RuntimeFailure::PluginFailure {
             detail: format!("Capability Port {CAPABILITY_ID} was connected more than once"),
@@ -1243,6 +1345,14 @@ impl CapabilityClientMany for AuditLogClient {
                 ))
             })
             .collect()
+    }
+
+    fn many_from_requirement(
+        dependencies: &PluginDependencies,
+        requirement_id: &str,
+    ) -> Result<Vec<BoundCapabilityClient<Self>>, RuntimeFailure> {
+        let dependencies = dependencies.requirement(requirement_id)?;
+        Self::many_from_dependencies(&dependencies)
     }
 }
 

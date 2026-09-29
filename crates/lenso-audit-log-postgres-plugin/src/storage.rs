@@ -71,7 +71,21 @@ impl FixtureAuditStore {
 
     fn append_event(&self, event: NewAuditEvent) -> Result<StoredEvent, AuditStoreError> {
         self.ensure_available()?;
-        let event = StoredEvent::fixture(event, chrono::Utc::now());
+        let event = StoredEvent::from_event(event, chrono::Utc::now());
+        if let Some(stored) = self
+            .events
+            .borrow()
+            .iter()
+            .find(|stored| stored.id == event.id)
+        {
+            let mut expected = event;
+            expected.created_at = stored.created_at;
+            return if expected == *stored {
+                Ok(stored.clone())
+            } else {
+                Err(RepositoryError::IdempotencyConflict.into())
+            };
+        }
         self.events.borrow_mut().push(event.clone());
         Ok(event)
     }

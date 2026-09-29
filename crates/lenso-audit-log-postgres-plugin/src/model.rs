@@ -8,6 +8,7 @@ use lenso_capability_audit_log::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
+use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -174,7 +175,13 @@ impl NewAuditEvent {
         request: AppendEventRequest,
         source_instance: &str,
     ) -> Result<Self, AppendEventError> {
-        if !valid_required(&request.event_name, 256)
+        if request.idempotency_key.as_deref().is_some_and(|key| {
+            key.is_empty()
+                || key.len() > 256
+                || !key.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')
+                })
+        }) || !valid_required(&request.event_name, 256)
             || !valid_required(source_instance, 256)
             || !valid_required(&request.action, 128)
             || !valid_required(&request.actor.kind, 128)
@@ -221,7 +228,10 @@ impl NewAuditEvent {
         let resource = request.resource;
         let context = request.request_context;
         Ok(Self {
-            id: format!("audit_evt_{}", Uuid::now_v7()),
+            id: request.idempotency_key.as_deref().map_or_else(
+                || format!("audit_evt_{}", Uuid::now_v7()),
+                |key| stable_event_id(source_instance, key),
+            ),
             event_name: request.event_name,
             source_instance: source_instance.to_owned(),
             action: request.action,
@@ -400,8 +410,7 @@ pub(crate) struct StoredEvent {
 }
 
 impl StoredEvent {
-    #[cfg(test)]
-    pub(crate) fn fixture(event: NewAuditEvent, created_at: DateTime<Utc>) -> Self {
+    pub(crate) fn from_event(event: NewAuditEvent, created_at: DateTime<Utc>) -> Self {
         Self {
             id: event.id,
             event_name: event.event_name,
@@ -503,6 +512,23 @@ pub(crate) enum ProjectionError {
     InvalidStoredValue { field: &'static str },
     #[error("serialize bounded Audit Event projection")]
     Serialization(#[source] serde_json::Error),
+}
+
+fn stable_event_id(source: &str, key: &str) -> String {
+    let mut digest = Sha256::new();
+    digest.update(
+        u64::try_from(source.len())
+            .expect("bounded source length")
+            .to_be_bytes(),
+    );
+    digest.update(source.as_bytes());
+    digest.update(
+        u64::try_from(key.len())
+            .expect("bounded delivery key length")
+            .to_be_bytes(),
+    );
+    digest.update(key.as_bytes());
+    format!("audit_evt_{:x}", digest.finalize())
 }
 
 pub(crate) fn validate_event_id(id: &str) -> Result<(), GetEventError> {

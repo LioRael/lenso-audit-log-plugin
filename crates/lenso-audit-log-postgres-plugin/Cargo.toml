@@ -24,7 +24,7 @@ root-slot = "audit"
 chrono.workspace = true
 lenso.workspace = true
 lenso-capability-audit-log = { path = "../lenso-capability-audit-log", version = "0.1.1" }
-lenso-capability-secrets = { version = "0.1.2" }
+lenso-capability-secrets = { version = "=0.1.4" }
 lenso-contract-runtime.workspace = true
 lenso-postgres-kit.workspace = true
 serde.workspace = true

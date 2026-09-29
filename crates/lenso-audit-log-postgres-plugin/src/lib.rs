@@ -9,7 +9,13 @@ mod storage;
 #[cfg(test)]
 mod tests;
 
-use std::{cell::RefCell, collections::BTreeSet, fmt, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    rc::Rc,
+    time::Duration,
+};
 
 use lenso::prelude::*;
 use lenso_capability_audit_log as audit;
@@ -45,6 +51,16 @@ pub struct AuditLogConfig {
     database_url_secret: String,
     writer_instances: Vec<String>,
     reader_instances: Vec<String>,
+    #[serde(default)]
+    reader_scopes: BTreeMap<String, Vec<AuditReadScope>>,
+}
+
+/// An exact opaque scope ceiling for a trusted read adapter.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuditReadScope {
+    pub kind: String,
+    pub id: String,
 }
 
 impl AuditLogConfig {
@@ -58,9 +74,29 @@ impl AuditLogConfig {
             database_url_secret: database_url_secret.into(),
             writer_instances,
             reader_instances,
+            reader_scopes: BTreeMap::new(),
         };
         config.validate()?;
         Ok(config)
+    }
+
+    /// Restricts one allowed reader to exact scopes before database reads.
+    pub fn with_reader_scopes(
+        mut self,
+        reader: impl Into<String>,
+        scopes: Vec<AuditReadScope>,
+    ) -> Result<Self, AuditLogConfigError> {
+        self.reader_scopes.insert(reader.into(), scopes);
+        self.validate()?;
+        Ok(self)
+    }
+
+    fn reader_admits_scope(&self, reader: &str, kind: Option<&str>, id: Option<&str>) -> bool {
+        self.reader_scopes.get(reader).is_none_or(|scopes| {
+            scopes
+                .iter()
+                .any(|scope| Some(scope.kind.as_str()) == kind && Some(scope.id.as_str()) == id)
+        })
     }
 
     fn validate(&self) -> Result<(), AuditLogConfigError> {
@@ -69,6 +105,16 @@ impl AuditLogConfig {
         }
         validate_callers(&self.writer_instances, CallerRole::Writer)?;
         validate_callers(&self.reader_instances, CallerRole::Reader)?;
+        if self.reader_scopes.iter().any(|(reader, scopes)| {
+            !self.reader_instances.contains(reader)
+                || scopes.is_empty()
+                || scopes.len() > 64
+                || scopes
+                    .iter()
+                    .any(|scope| !valid_name(&scope.kind, 128) || !valid_name(&scope.id, 512))
+        }) {
+            return Err(AuditLogConfigError::InvalidReadScope);
+        }
         schema_plan().map_err(|_| AuditLogConfigError::InvalidSchemaPlan)?;
         Ok(())
     }
@@ -100,6 +146,8 @@ pub enum AuditLogConfigError {
     InvalidCaller { role: CallerRole },
     #[error("authorized {role} Instances must not contain duplicates")]
     DuplicateCaller { role: CallerRole },
+    #[error("invalid reader scope ceiling")]
+    InvalidReadScope,
     #[error("the fixed Audit Log schema plan is invalid")]
     InvalidSchemaPlan,
 }
@@ -162,7 +210,18 @@ impl PostgresAuditLogPlugin {
             .store
             .append_event(event)
             .await
-            .map_err(|error| PluginError::runtime(storage_failure(&error)))?;
+            .map_err(|error| match error {
+                storage::AuditStoreError::Repository(
+                    repository::RepositoryError::IdempotencyConflict,
+                ) => PluginError::domain(AppendEventError::IdempotencyConflict),
+                other @ storage::AuditStoreError::Repository(_) => {
+                    PluginError::runtime(storage_failure(&other))
+                }
+                #[cfg(test)]
+                other @ storage::AuditStoreError::FixtureUnavailable => {
+                    PluginError::runtime(storage_failure(&other))
+                }
+            })?;
         let event = stored
             .project::<AppendEventResponseEvent>()
             .map_err(|error| PluginError::runtime(projection_failure(&error)))?;
@@ -174,9 +233,8 @@ impl PostgresAuditLogPlugin {
         context: Ctx,
         request: GetEventRequest,
     ) -> PluginResult<GetEventResponse, GetEventError> {
-        if !Self::authorized(&context, &self.config.reader_instances) {
-            return Err(PluginError::domain(GetEventError::Unauthorized));
-        }
+        let reader = Self::authorized_caller(&context, &self.config.reader_instances)
+            .ok_or_else(|| PluginError::domain(GetEventError::Unauthorized))?;
         validate_event_id(&request.id).map_err(PluginError::domain)?;
         let stored = self
             .prepared()
@@ -186,6 +244,13 @@ impl PostgresAuditLogPlugin {
             .await
             .map_err(|error| PluginError::runtime(storage_failure(&error)))?
             .ok_or_else(|| PluginError::domain(GetEventError::NotFound))?;
+        if !self.config.reader_admits_scope(
+            reader,
+            stored.scope_type.as_deref(),
+            stored.scope_id.as_deref(),
+        ) {
+            return Err(PluginError::domain(GetEventError::NotFound));
+        }
         let event = stored
             .project::<GetEventResponseEvent>()
             .map_err(|error| PluginError::runtime(projection_failure(&error)))?;
@@ -197,7 +262,13 @@ impl PostgresAuditLogPlugin {
         context: Ctx,
         request: ListEventsRequest,
     ) -> PluginResult<ListEventsResponse, ListEventsError> {
-        if !Self::authorized(&context, &self.config.reader_instances) {
+        let reader = Self::authorized_caller(&context, &self.config.reader_instances)
+            .ok_or_else(|| PluginError::domain(ListEventsError::Unauthorized))?;
+        if !self.config.reader_admits_scope(
+            reader,
+            request.scope_type.as_deref(),
+            request.scope_id.as_deref(),
+        ) {
             return Err(PluginError::domain(ListEventsError::Unauthorized));
         }
         let filter = EventFilter::from_request(request).map_err(PluginError::domain)?;
@@ -234,10 +305,6 @@ impl PostgresAuditLogPlugin {
 }
 
 impl PostgresAuditLogPlugin {
-    fn authorized(context: &Ctx, allowed: &[String]) -> bool {
-        Self::authorized_caller(context, allowed).is_some()
-    }
-
     fn authorized_caller<'a>(context: &'a Ctx, allowed: &[String]) -> Option<&'a str> {
         context
             .caller_instance()

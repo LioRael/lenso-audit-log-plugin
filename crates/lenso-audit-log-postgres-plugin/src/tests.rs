@@ -51,6 +51,11 @@ enum ConsumerAction {
     RoundTrip,
     ReadBoth,
     Append,
+    ReadAtScope {
+        kind: Option<String>,
+        id: Option<String>,
+        event_id: String,
+    },
 }
 
 #[derive(Debug)]
@@ -89,6 +94,7 @@ struct FixtureProviderFactory {
     store: AuditStore,
     writers: Vec<String>,
     readers: Vec<String>,
+    read_scopes: BTreeMap<String, Vec<crate::AuditReadScope>>,
 }
 
 impl NativePluginFactory for FixtureProviderFactory {
@@ -100,7 +106,7 @@ impl NativePluginFactory for FixtureProviderFactory {
         &self,
         _context: NativePluginFactoryContext<'_>,
     ) -> Result<NativePluginInstance, RuntimeFailure> {
-        let config = AuditLogConfig::new(
+        let mut config = AuditLogConfig::new(
             DATABASE_SECRET_REFERENCE,
             self.writers.clone(),
             self.readers.clone(),
@@ -108,6 +114,13 @@ impl NativePluginFactory for FixtureProviderFactory {
         .map_err(|error| RuntimeFailure::Internal {
             detail: format!("invalid fixture configuration: {error}"),
         })?;
+        for (reader, scopes) in &self.read_scopes {
+            config = config
+                .with_reader_scopes(reader, scopes.clone())
+                .map_err(|error| RuntimeFailure::Internal {
+                    detail: error.to_string(),
+                })?;
+        }
         let plugin = PostgresAuditLogPlugin {
             config,
             secrets: lenso::prelude::Port::default(),
@@ -203,6 +216,18 @@ impl PluginLifecycle for ConsumerLifecycle {
                         .await
                         .map(|_| ()),
                 },
+                ConsumerAction::ReadAtScope { kind, id, event_id } => {
+                    let mut request = list_request();
+                    request.scope_type = kind;
+                    request.scope_id = id;
+                    Observed::ReadBoth {
+                        list: client.list_events(request).await.map(|_| ()),
+                        get: client
+                            .get_event(GetEventRequest { id: event_id })
+                            .await
+                            .map(|_| ()),
+                    }
+                }
                 ConsumerAction::Append => {
                     Observed::Append(client.append_event(append_request()).await.map(|_| ()))
                 }
@@ -464,7 +489,7 @@ fn metadata_validation_is_bounded_portable_and_debug_redacted() {
 #[test]
 fn stored_event_projection_revalidates_every_legacy_wire_boundary() {
     let event = NewAuditEvent::from_request(append_request(), "consumer").unwrap();
-    let mut stored = StoredEvent::fixture(event, chrono::Utc::now());
+    let mut stored = StoredEvent::from_event(event, chrono::Utc::now());
     stored.event_name = "x".repeat(257);
     assert!(matches!(
         stored.project::<GetEventResponseEvent>(),
@@ -981,6 +1006,16 @@ async fn run_fixture(
     action: ConsumerAction,
     store: AuditStore,
 ) -> Observed {
+    run_fixture_with_scopes(writers, readers, action, store, BTreeMap::new()).await
+}
+
+async fn run_fixture_with_scopes(
+    writers: Vec<String>,
+    readers: Vec<String>,
+    action: ConsumerAction,
+    store: AuditStore,
+    read_scopes: BTreeMap<String, Vec<crate::AuditReadScope>>,
+) -> Observed {
     let observed = Rc::new(RefCell::new(None));
     let local = tokio::task::LocalSet::new();
     local
@@ -993,6 +1028,7 @@ async fn run_fixture(
                         store,
                         writers,
                         readers,
+                        read_scopes,
                     })
                     .with_factory(ConsumerFactory {
                         action,
@@ -1090,6 +1126,7 @@ fn actual_plan(configuration: &str, include_consumer: bool) -> ResolvedAppPlan {
 
 fn append_request() -> AppendEventRequest {
     AppendEventRequest {
+        idempotency_key: None,
         action: "close".to_owned(),
         actor: AppendEventRequestActor {
             display: Some("Avery".to_owned()),
@@ -1249,4 +1286,185 @@ async fn drop_audit_schema(pool: &sqlx::PgPool) {
         .execute(pool)
         .await
         .unwrap();
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn stable_deliveries_are_source_scoped_and_conflicting_intent_is_rejected() {
+    let store = AuditStore::Fixture(FixtureAuditStore::default());
+    let mut request = append_request();
+    request.idempotency_key = Some("invocation-42-attempt".into());
+    let first = store
+        .append_event(NewAuditEvent::from_request(request.clone(), "management/default").unwrap())
+        .await
+        .unwrap();
+    let repeated = store
+        .append_event(NewAuditEvent::from_request(request.clone(), "management/default").unwrap())
+        .await
+        .unwrap();
+    assert_eq!(first, repeated);
+    let other = store
+        .append_event(NewAuditEvent::from_request(request.clone(), "business/default").unwrap())
+        .await
+        .unwrap();
+    assert_ne!(first.id, other.id);
+    request.action = "different-intent".into();
+    assert!(matches!(
+        store
+            .append_event(NewAuditEvent::from_request(request, "management/default").unwrap())
+            .await,
+        Err(crate::storage::AuditStoreError::Repository(
+            crate::repository::RepositoryError::IdempotencyConflict
+        ))
+    ));
+}
+
+#[test]
+fn read_adapter_scope_ceiling_rejects_unscoped_and_cross_deployment_queries() {
+    let config = AuditLogConfig::new(
+        "audit/db",
+        vec!["writer".into()],
+        vec!["management/default".into()],
+    )
+    .unwrap()
+    .with_reader_scopes(
+        "management/default",
+        vec![crate::AuditReadScope {
+            kind: "management-deployment".into(),
+            id: "deployment-a".into(),
+        }],
+    )
+    .unwrap();
+    assert!(config.reader_admits_scope(
+        "management/default",
+        Some("management-deployment"),
+        Some("deployment-a")
+    ));
+    assert!(!config.reader_admits_scope("management/default", None, None));
+    assert!(!config.reader_admits_scope(
+        "management/default",
+        Some("management-deployment"),
+        Some("deployment-b")
+    ));
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[cfg_attr(
+    not(feature = "postgres-acceptance"),
+    ignore = "requires LENSO_POSTGRES_TEST_URL and exclusive ownership of audit_log schema"
+)]
+async fn postgres_delivery_replay_is_atomic_source_scoped_and_precision_stable() {
+    let _exclusive_database = POSTGRES_ACCEPTANCE_LOCK.lock().await;
+    let database_url = postgres_test_url();
+    let pool = sqlx::PgPool::connect(&database_url).await.unwrap();
+    drop_audit_schema(&pool).await;
+    super::AuditLogOperator::setup(&database_url).await.unwrap();
+    let postgres = lenso_postgres_kit::OwnedPostgres::prepare(
+        &database_url,
+        crate::schema::schema_plan().unwrap(),
+    )
+    .await
+    .unwrap();
+    let mut request = append_request();
+    request.idempotency_key = Some("delivery-concurrent-42".into());
+    request.occurred_at = "2026-09-30T01:02:03.123456789Z".into();
+    let event = NewAuditEvent::from_request(request.clone(), "management/default").unwrap();
+    let (left, right) = tokio::join!(
+        crate::repository::append_event(&postgres, event.clone()),
+        crate::repository::append_event(&postgres, event)
+    );
+    let first = left.unwrap();
+    assert_eq!(first, right.unwrap());
+    let other = crate::repository::append_event(
+        &postgres,
+        NewAuditEvent::from_request(request.clone(), "business/default").unwrap(),
+    )
+    .await
+    .unwrap();
+    assert_ne!(first.id, other.id);
+    request.action = "changed".into();
+    assert!(matches!(
+        crate::repository::append_event(
+            &postgres,
+            NewAuditEvent::from_request(request, "management/default").unwrap()
+        )
+        .await,
+        Err(crate::repository::RepositoryError::IdempotencyConflict)
+    ));
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM audit_log.events")
+        .fetch_one(postgres.pool())
+        .await
+        .unwrap();
+    assert_eq!(count, 2);
+    postgres.pool().close().await;
+    pool.close().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn generated_reads_enforce_scope_ceiling_before_paging_or_get_projection() {
+    let store = AuditStore::Fixture(FixtureAuditStore::default());
+    let mut request = append_request();
+    request.scope = Some(audit::AppendEventRequestScope {
+        module: None,
+        scope_type: "management-deployment".into(),
+        id: "deployment-a".into(),
+        display: None,
+    });
+    let first = store
+        .append_event(NewAuditEvent::from_request(request.clone(), "owner").unwrap())
+        .await
+        .unwrap();
+    request.scope.as_mut().unwrap().id = "deployment-b".into();
+    let other = store
+        .append_event(NewAuditEvent::from_request(request, "owner").unwrap())
+        .await
+        .unwrap();
+    let ceiling = BTreeMap::from([(
+        "consumer".into(),
+        vec![crate::AuditReadScope {
+            kind: "management-deployment".into(),
+            id: "deployment-a".into(),
+        }],
+    )]);
+    let accepted = run_fixture_with_scopes(
+        vec!["owner".into()],
+        vec!["consumer".into()],
+        ConsumerAction::ReadAtScope {
+            kind: Some("management-deployment".into()),
+            id: Some("deployment-a".into()),
+            event_id: first.id,
+        },
+        store.clone(),
+        ceiling.clone(),
+    )
+    .await;
+    assert!(matches!(
+        accepted,
+        Observed::ReadBoth {
+            list: Ok(()),
+            get: Ok(())
+        }
+    ));
+    let rejected = run_fixture_with_scopes(
+        vec!["owner".into()],
+        vec!["consumer".into()],
+        ConsumerAction::ReadAtScope {
+            kind: None,
+            id: None,
+            event_id: other.id,
+        },
+        store,
+        ceiling,
+    )
+    .await;
+    assert!(matches!(
+        rejected,
+        Observed::ReadBoth {
+            list: Err(audit::AuditLogListEventsInvocationError::Domain(
+                audit::ListEventsError::Unauthorized
+            )),
+            get: Err(audit::AuditLogGetEventInvocationError::Domain(
+                audit::GetEventError::NotFound
+            ))
+        }
+    ));
 }
