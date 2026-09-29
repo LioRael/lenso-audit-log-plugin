@@ -1,0 +1,55 @@
+.github/workflows/ci.yml
+  s_f4202e28c6b5b1::t_989dae7f3cd586 5-6,41
+Cargo.lock
+  s_f4202e28c6b5b1::t_ac7701fe963e68 731,733,745,747,794,796,825,827,861,863,869,874,876,886,888,896,898,904-914,917,919,926,933,935,947,949,953,955,957,964,966,977,979
+Cargo.toml
+  s_7d146975368699::t_cb8983f18cc101 20-28
+crates/lenso-audit-log-postgres-plugin/Cargo.toml
+  s_f4202e28c6b5b1::t_bf2f18f02cd3bd 27
+crates/lenso-audit-log-postgres-plugin/configuration.schema.json
+  s_f4202e28c6b5b1::t_6a7de486b6ae24 5-9,21-25,32-65
+crates/lenso-audit-log-postgres-plugin/src/lib.rs
+  s_f4202e28c6b5b1::t_4d01e6839b963e 12-18,54-63,77,83-101,108-117,149-150,213-224,236-237,247-253,265-271
+crates/lenso-audit-log-postgres-plugin/src/model.rs
+  s_f4202e28c6b5b1::t_a3fc0554a5fd2d 11,178-184,231-234,413,517-533
+crates/lenso-audit-log-postgres-plugin/src/repository.rs
+  s_f4202e28c6b5b1::t_67507c6186f56e 122,152,154-158,184,186-198,397-398
+crates/lenso-audit-log-postgres-plugin/src/storage.rs
+  s_f4202e28c6b5b1::t_40f928d0e96b26 74-88
+crates/lenso-audit-log-postgres-plugin/src/tests.rs
+  s_f4202e28c6b5b1::t_ef7ac7ab27839e 54-58,97,109,117-123,219-230,492,1008-1017,1031,1129,1290-1470
+crates/lenso-capability-audit-log/capability.json
+  s_f4202e28c6b5b1::t_fae01b903dddc5 3
+crates/lenso-capability-audit-log/schemas/append-event-error.schema.json
+  s_f4202e28c6b5b1::t_0d8c984b3da580 4-12
+crates/lenso-capability-audit-log/schemas/append-event-request.schema.json
+  s_f4202e28c6b5b1::t_f15648e3387730 18-43,46-50,52-72,77-86,88-113,118-126,128-145,150-159,161-192,196-203,207-210,219-229
+crates/lenso-capability-audit-log/src/generated.rs
+  s_f4202e28c6b5b1::t_97d6174177ced0 6,8-9,14-15,19,23-32,36-39,59-61,95,323,792,818,1081-1145,1244,1255-1261,1314-1321,1349-1356
+docs/management-security.md
+  s_f4202e28c6b5b1::t_7c324da3b4960a 1-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59ecc79e38de72891e6a164d7e74617c618038f8",
+  "prompts": {},
+  "sessions": {
+    "s_7d146975368699": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0c54a-381f-7362-9b4d-95aea89e2437",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "LioRael <leo@lenso.dev>"
+    },
+    "s_f4202e28c6b5b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ee9e-623b-7d12-a648-d8b462390eec",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "LioRael <leo@lenso.dev>"
+    }
+  }
+}
