@@ -174,15 +174,18 @@ impl PluginLifecycle for ConsumerLifecycle {
             let client = client?;
             let outcome = match action {
                 ConsumerAction::RoundTrip => {
-                    let append =
-                        client
-                            .append_event(append_request())
-                            .await
-                            .map(|response| AppendProof {
-                                id: response.event.id,
-                                metadata: response.event.metadata,
-                                source_instance: response.event.source_instance,
-                            });
+                    let mut wire = serde_json::to_value(append_request()).unwrap();
+                    wire["source_instance"] = json!("forged.writer");
+                    wire["metadata"]["source_instance"] = json!("forged.writer");
+                    let request = audit::decode_append_event_request(&wire.to_string()).unwrap();
+                    let append = client
+                        .append_event(request)
+                        .await
+                        .map(|response| AppendProof {
+                            id: response.event.id,
+                            metadata: response.event.metadata,
+                            source_instance: response.event.source_instance,
+                        });
                     let (list, get) = match &append {
                         Ok(response) => {
                             let id = response.id.clone();
@@ -350,12 +353,26 @@ async fn generated_client_round_trip_redacts_metadata_and_derives_source_identit
     };
     assert!(appended.id.starts_with("audit_evt_"));
     assert_eq!(appended.source_instance, "consumer");
+    assert_eq!(appended.metadata["source_instance"], "forged.writer");
     assert_eq!(listed.ids.len(), 1);
     assert_eq!(listed.ids[0], appended.id);
     assert_eq!(got.id, appended.id);
     assert_eq!(appended.metadata["api_token"], "[redacted]");
     assert_eq!(appended.metadata["nested"]["password"], "[redacted]");
     assert_eq!(appended.metadata["nested"]["safe"], "visible");
+}
+
+#[test]
+fn generated_append_wire_cannot_preserve_a_source_spoof() {
+    let mut wire = serde_json::to_value(append_request()).unwrap();
+    wire["source_instance"] = json!("forged.writer");
+    let decoded = audit::decode_append_event_request(&wire.to_string()).unwrap();
+    assert!(
+        serde_json::to_value(decoded)
+            .unwrap()
+            .get("source_instance")
+            .is_none()
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
