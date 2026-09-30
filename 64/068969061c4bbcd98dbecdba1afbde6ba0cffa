@@ -1,0 +1,23 @@
+crates/lenso-audit-log-d1-plugin/tests/d1-fixture.mjs
+  s_f4202e28c6b5b1::t_cc36d6498a910a 4
+crates/lenso-audit-log-d1-plugin/src/host_facilities/store.mjs
+  s_f4202e28c6b5b1::t_cc36d6498a910a 46-48
+crates/lenso-audit-log-d1-plugin/tests/d1-store.test.mjs
+  s_f4202e28c6b5b1::t_cc36d6498a910a 24-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "64068969061c4bbcd98dbecdba1afbde6ba0cffa",
+  "prompts": {},
+  "sessions": {
+    "s_f4202e28c6b5b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ee9e-623b-7d12-a648-d8b462390eec",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "LioRael <leo@lenso.dev>"
+    }
+  }
+}
