@@ -1,0 +1,43 @@
+.github/release-owner.toml
+  s_f4202e28c6b5b1::t_f4122acdd09b04 1-23
+.github/scripts/release-archives.py
+  s_f4202e28c6b5b1::t_2b200fac2577ef 1-45
+.github/scripts/release-gate.sh
+  s_f4202e28c6b5b1::t_18e37987de7f91 1-66
+.github/scripts/release-plan.sh
+  s_f4202e28c6b5b1::t_a9894e1e2171b8 1-37
+.github/scripts/release-policy.json
+  s_f4202e28c6b5b1::t_43b495457144e0 1-24
+.github/scripts/release-postcondition.sh
+  s_f4202e28c6b5b1::t_6fb882cf201d5e 1-134
+.github/scripts/release-preflight.sh
+  s_f4202e28c6b5b1::t_024365570cc229 1-11
+.github/scripts/release-set.sh
+  s_f4202e28c6b5b1::t_fc401fddd2a173 1-49
+.github/scripts/test-release-archives.py
+  s_f4202e28c6b5b1::t_9b54610437f841 1-44
+.github/scripts/test-release-scripts.sh
+  s_f4202e28c6b5b1::t_b62d80825d8bac 1-108
+.github/workflows/ci.yml
+  s_f4202e28c6b5b1::t_12b5aab564881b 39-40
+.github/workflows/release-plz.yml
+  s_f4202e28c6b5b1::t_7f047367d10c41 6-7,9-13,16-31,40-42,46,48-55,57,59,62,65-70,74-75,77,79-81,83-86,90,93-100,102-115,119-122,124-127
+docs/release-process.md
+  s_f4202e28c6b5b1::t_190d48cbb8b917 3-34,36-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5a9fde4fb9e14e5e9740429a1c79fd65e9d33ad",
+  "prompts": {},
+  "sessions": {
+    "s_f4202e28c6b5b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ee9e-623b-7d12-a648-d8b462390eec",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "LioRael <leo@lenso.dev>"
+    }
+  }
+}
