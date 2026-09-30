@@ -20,4 +20,3 @@ release = true
 [[package]]
 name = "lenso-audit-log-d1-plugin"
 release = true
-
