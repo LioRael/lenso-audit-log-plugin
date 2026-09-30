@@ -1,0 +1,23 @@
+.github/workflows/ci.yml
+  s_f4202e28c6b5b1::t_6e648d474d3077 42
+Cargo.lock
+  s_f4202e28c6b5b1::t_18e9f96c781100 731-732,745,869-870,879-880,903,923-924,943-944,958-959,972,987-988,999-1000,2374-2375
+Cargo.toml
+  s_f4202e28c6b5b1::t_df4e5c9752b74e 22,26-27,30,54-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8fb929d066a5ce4bc145db47a6aae0527b62f230",
+  "prompts": {},
+  "sessions": {
+    "s_f4202e28c6b5b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ee9e-623b-7d12-a648-d8b462390eec",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "LioRael <leo@lenso.dev>"
+    }
+  }
+}
