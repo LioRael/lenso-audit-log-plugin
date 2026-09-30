@@ -1,0 +1,24 @@
+{
+  "repository": "LioRael/lenso-audit-log-plugin",
+  "required_jobs": [
+    "quality"
+  ],
+  "packages": [
+    {
+      "package_name": "lenso-capability-audit-log",
+      "version": "0.1.1"
+    },
+    {
+      "package_name": "lenso-audit-log-core",
+      "version": "0.1.0"
+    },
+    {
+      "package_name": "lenso-audit-log-postgres-plugin",
+      "version": "0.1.1"
+    },
+    {
+      "package_name": "lenso-audit-log-d1-plugin",
+      "version": "0.1.0"
+    }
+  ]
+}

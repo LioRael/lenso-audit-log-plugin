@@ -3,14 +3,31 @@ name: Release-plz
 on:
   workflow_dispatch:
     inputs:
-      live:
-        description: Publish unpublished crate versions and create their releases
+      mode:
+        description: Read-only by default; publish needs separate authorization
         required: true
-        default: false
-        type: boolean
-      confirm:
-        description: Type publish when live is enabled
+        default: dry-run
+        type: choice
+        options: [dry-run, publish]
+      confirmation:
+        description: Type publish only for separately authorized publication
         required: false
+        type: string
+      source_sha:
+        description: Full SHA already landed on main
+        required: true
+        type: string
+      release_set:
+        description: Exact JSON array of pending package_name/version objects
+        required: true
+        type: string
+      candidate_run_id:
+        description: Candidate CI run ID that proved this SHA
+        required: true
+        type: string
+      candidate_attempt:
+        description: Exact successful candidate CI attempt
+        required: true
         type: string
 
 permissions: {}
@@ -20,57 +37,91 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  reject-unconfirmed-live-release:
-    name: Reject unconfirmed live release
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.live && (inputs.confirm != 'publish' || github.ref != 'refs/heads/main') }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Explain the rejected release
-        run: |
-          echo "Live publication requires confirm=publish and ref=main." >&2
-          exit 1
-
-  dry-run:
-    name: Release dry-run
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.live && github.ref == 'refs/heads/main' }}
+  qualification:
+    name: Release qualification
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      actions: read
       pull-requests: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ inputs.source_sha }}
+      RELEASE_SET: ${{ inputs.release_set }}
+      RELEASE_MODE: ${{ inputs.mode }}
+      RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      CANDIDATE_ATTEMPT: ${{ inputs.candidate_attempt }}
     steps:
-      - &checkout
-        name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           fetch-depth: 0
           persist-credentials: false
-      - &install-rust
-        name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
         with:
           toolchain: 1.94.0
-      - name: Validate the release without publishing
+      - name: Verify source, exact package set and CI attempt
+        run: bash .github/scripts/release-gate.sh
+      - name: Verify normalized archives from the clean source
+        run: bash .github/scripts/release-preflight.sh
+      - name: Plan without publishing, tagging or opening a PR
+        id: plan
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release
+          config: .github/release-owner.toml
+          version: 0.3.160
           dry_run: true
+      - name: Validate dry-run records
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_RELEASE_SET: ${{ inputs.release_set }}
+          ACTUAL_RELEASES: ${{ steps.plan.outputs.releases }}
+        run: bash .github/scripts/release-plan.sh
 
-  release:
-    name: Publish crates
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.live && inputs.confirm == 'publish' && github.ref == 'refs/heads/main' }}
+  publish:
+    name: Publish separately authorized set
+    needs: qualification
+    if: ${{ github.ref == 'refs/heads/main' && inputs.mode == 'publish' && needs.qualification.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
       pull-requests: read
       id-token: write
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      RELEASE_SHA: ${{ inputs.source_sha }}
+      RELEASE_SET: ${{ inputs.release_set }}
+      RELEASE_MODE: ${{ inputs.mode }}
+      RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
+      CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      CANDIDATE_ATTEMPT: ${{ inputs.candidate_attempt }}
     steps:
-      - *checkout
-      - *install-rust
-      - name: Publish unpublished crates
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@fa04a1451ff1842e2626ccb99004d0195b455a88 # stable
+        with:
+          toolchain: 1.94.0
+      - name: Reverify current Main, approval and exact candidate attempt
+        run: bash .github/scripts/release-gate.sh
+      - name: Reverify normalized archives immediately before publication
+        run: bash .github/scripts/release-preflight.sh
+      - name: Publish the bounded owner cohort
+        id: release
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release
+          config: .github/release-owner.toml
+          version: 0.3.160
+      - name: Reconcile reported packages, Primary versions and exact source tags
+        if: ${{ !cancelled() && steps.release.outcome != 'skipped' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EXPECTED_RELEASE_SET: ${{ inputs.release_set }}
+          ACTUAL_RELEASES: ${{ steps.release.outputs.releases }}
+          RELEASE_ACTION_OUTCOME: ${{ steps.release.outcome }}
+        run: bash .github/scripts/release-postcondition.sh

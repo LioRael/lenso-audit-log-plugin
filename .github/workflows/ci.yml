@@ -36,6 +36,8 @@ jobs:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Verify manual release guards
+        run: bash .github/scripts/test-release-scripts.sh
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Install exact contract projection checker

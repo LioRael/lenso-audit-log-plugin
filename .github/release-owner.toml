@@ -1,0 +1,23 @@
+# Manual, exact Owner cohort; other packages are never processed.
+[workspace]
+release = false
+release_always = true
+changelog_update = false
+git_tag_name = "{{ package }}@{{ version }}"
+
+[[package]]
+name = "lenso-capability-audit-log"
+release = true
+
+[[package]]
+name = "lenso-audit-log-core"
+release = true
+
+[[package]]
+name = "lenso-audit-log-postgres-plugin"
+release = true
+
+[[package]]
+name = "lenso-audit-log-d1-plugin"
+release = true
+
