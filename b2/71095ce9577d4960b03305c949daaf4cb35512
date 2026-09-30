@@ -1,0 +1,30 @@
+.github/scripts/release-gate.sh
+  s_f4202e28c6b5b1::t_b6a0187fe093e7 45-46,53-64
+  s_f4202e28c6b5b1::t_0a6e3e7ec0b13f 47-52
+.github/scripts/release-config.py
+  s_f4202e28c6b5b1::t_b6a0187fe093e7 1-34
+.github/scripts/test-release-scripts.sh
+  s_f4202e28c6b5b1::t_0a6e3e7ec0b13f 13-14,34-42,79,92-106
+.github/scripts/release-preflight.sh
+  s_f4202e28c6b5b1::t_b6a0187fe093e7 7
+.github/workflows/release-plz.yml
+  s_f4202e28c6b5b1::t_b6a0187fe093e7 74,119
+docs/release-process.md
+  s_f4202e28c6b5b1::t_fac086c8c15136 24-29,40-42,60-61,63-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b271095ce9577d4960b03305c949daaf4cb35512",
+  "prompts": {},
+  "sessions": {
+    "s_f4202e28c6b5b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ee9e-623b-7d12-a648-d8b462390eec",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "LioRael <leo@lenso.dev>"
+    }
+  }
+}
