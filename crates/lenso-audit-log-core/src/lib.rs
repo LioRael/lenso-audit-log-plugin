@@ -1,4 +1,4 @@
-//! Owner-private validation and service shared by PostgreSQL and D1 implementations.
+//! Owner-private validation and service shared by `PostgreSQL` and D1 implementations.
 pub mod model;
 use lenso::prelude::*;
 use lenso_capability_audit_log::{
