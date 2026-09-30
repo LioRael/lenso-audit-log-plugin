@@ -10,7 +10,8 @@ allowed="$(jq -c .packages "$SCRIPT_DIR/release-policy.json")"
 python3 - "$SCRIPT_DIR/release-policy.json" "$scratch/metadata.json" <<'PY'
 import json,sys
 policy=json.load(open(sys.argv[1]))
-json.dump({'packages':[{'name':p['package_name'],'version':p['version'],'publish':None} for p in policy['packages']]},open(sys.argv[2],'w'))
+deps={'lenso-audit-log-core':['lenso-capability-audit-log'],'lenso-audit-log-postgres-plugin':['lenso-capability-audit-log','lenso-audit-log-core'],'lenso-audit-log-d1-plugin':['lenso-capability-audit-log','lenso-audit-log-core']}
+json.dump({'packages':[{'name':p['package_name'],'version':p['version'],'publish':None,'dependencies':[{'name':name,'kind':None} for name in deps.get(p['package_name'],[])]} for p in policy['packages']]},open(sys.argv[2],'w'))
 PY
 cat >"$scratch/bin/git" <<'EOF'
 #!/usr/bin/env bash
@@ -30,8 +31,15 @@ EOF
 cat >"$scratch/bin/curl" <<'EOF'
 #!/usr/bin/env bash
 url="${@: -1}"
-if [[ "$url" == *"/0."* ]]; then printf '%s\n' "${MOCK_VERSION_STATUS:-404}"
-else printf '%s\n' "${MOCK_NAMESPACE_STATUS:-200}"; fi
+relative="${url#https://crates.io/api/v1/crates/}"
+package="${relative%%/*}"
+if [[ "$url" == *"/0."* ]]; then
+  if [[ ",${MOCK_VISIBLE_PACKAGES:-}," == *",$package,"* ]]; then printf '200\n'
+  else printf '%s\n' "${MOCK_VERSION_STATUS:-404}"; fi
+else
+  if [[ ",${MOCK_NEW_NAMES:-}," == *",$package,"* ]]; then printf '404\n'
+  else printf '%s\n' "${MOCK_NAMESPACE_STATUS:-200}"; fi
+fi
 EOF
 cat >"$scratch/bin/gh" <<'EOF'
 #!/usr/bin/env bash
@@ -68,7 +76,7 @@ gate RELEASE_MODE=publish RELEASE_CONFIRMATION=publish >/dev/null
 reject 'confirmation text publish' RELEASE_MODE=publish
 reject 'outside the exact package/version allowlist' 'RELEASE_SET=[{"package_name":"lenso-unapproved","version":"0.1.0"}]'
 reject 'invalid release_set' 'RELEASE_SET=[{"package_name":"lenso-capability-audit-log","version":"0.1.1","extra":true}]'
-reject 'registry-derived pending subset' RELEASE_SET='[]'
+reject 'non-empty approved subset' RELEASE_SET='[]'
 reject 'candidate run does not prove' MOCK_BRANCH=delta/verify/obsolete
 reject 'candidate run does not prove' MOCK_RUN_SHA=2222222222222222222222222222222222222222
 reject 'candidate run does not prove' MOCK_RUN_ATTEMPT=1
@@ -81,6 +89,21 @@ reject 'tracked modifications' MOCK_DIRTY=' M source.rs'
 reject 'unexpected registry response' MOCK_VERSION_STATUS=503
 reject 'first-name bootstrap' RELEASE_MODE=publish RELEASE_CONFIRMATION=publish MOCK_NAMESPACE_STATUS=404
 gate RELEASE_SET='[]' MOCK_VERSION_STATUS=200 >/dev/null
+capability_stage='[{"package_name":"lenso-capability-audit-log","version":"0.1.1"}]'
+postgres_stage='[{"package_name":"lenso-audit-log-postgres-plugin","version":"0.1.1"}]'
+gate "RELEASE_SET=$capability_stage" >/dev/null
+gate "RELEASE_SET=$capability_stage" RELEASE_MODE=publish RELEASE_CONFIRMATION=publish MOCK_NEW_NAMES=lenso-audit-log-core,lenso-audit-log-d1-plugin >/dev/null
+reject 'requires lenso-capability-audit-log' "RELEASE_SET=$postgres_stage"
+reject 'requires lenso-audit-log-core' "RELEASE_SET=$postgres_stage" MOCK_VISIBLE_PACKAGES=lenso-capability-audit-log
+gate "RELEASE_SET=$postgres_stage" MOCK_VISIBLE_PACKAGES=lenso-capability-audit-log,lenso-audit-log-core >/dev/null
+reject 'not pending' "RELEASE_SET=$capability_stage" MOCK_VISIBLE_PACKAGES=lenso-capability-audit-log
+python3 "$SCRIPT_DIR/release-config.py" --release-set "$capability_stage" --output "$scratch/stage.toml"
+python3 - "$scratch/stage.toml" <<'PY'
+import sys,tomllib
+config=tomllib.load(open(sys.argv[1],'rb'))
+assert config['workspace']['release'] is False
+assert config['package']==[{'name':'lenso-capability-audit-log','release':True}]
+PY
 env EXPECTED_RELEASE_SET="$allowed" ACTUAL_RELEASES=null bash "$SCRIPT_DIR/release-plan.sh" >/dev/null
 if env EXPECTED_RELEASE_SET="$allowed" 'ACTUAL_RELEASES=[{"package_name":"lenso-unapproved","version":"0.1.0"}]' bash "$SCRIPT_DIR/release-plan.sh" >"$scratch/plan.log" 2>&1; then exit 1; fi
 actual="$(jq -c 'map(. + {tag:(.package_name + "@" + .version)})' <<<"$allowed")"

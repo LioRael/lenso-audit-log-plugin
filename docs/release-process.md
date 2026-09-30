@@ -21,10 +21,12 @@ permissions and cannot obtain an OIDC publishing token. It explicitly runs
 
 Dispatch from Main with the full `source_sha`, exact `candidate_run_id` and
 `candidate_attempt`, and a JSON array of `package_name`/`version` objects. The
-set must equal the registry-derived pending subset of the four versions above.
-This permits a separately authorized new-name bootstrap followed by a reviewed
-remainder, while rejecting extra packages, wrong versions, duplicates and
-unknown registry responses.
+set must be an explicitly approved non-empty subset of the currently missing
+versions within that four-package allowlist. Already-published versions, extra
+packages, wrong versions, duplicates and unknown registry responses are rejected.
+Each selected package must have its production/build cohort dependencies
+selected in the same release or already Primary-visible at the exact cohort
+version. Normalized archive verification checks the remaining registry graph.
 
 The gate verifies the clean checkout against fresh remote Main and requires
 the exact `candidate/**` push CI workflow, SHA and attempt, with one successful
@@ -35,8 +37,9 @@ Native PostgreSQL and Wasm gates remain required without weakening.
 
 Live mode requires separate human authorization and `confirmation=publish`.
 The live job repeats the source, candidate, pending-set and archive checks
-immediately before pinned release-plz. `.github/release-owner.toml` processes
-only this four-package allowlist. The postcondition reconciles exact action
+immediately before pinned release-plz. A private runner-temporary config is
+generated from the checked allowlist and contains only the requested stage;
+unselected packages are disabled. The postcondition reconciles exact action
 records, Primary versions, source-bound tags and GitHub releases, even after
 partial failure. Inspect an unknown or partial publication before any further
 dispatch. Landing source or passing a dry-run does not authorize publication.
@@ -54,10 +57,19 @@ source and normalized archive after its dependencies are visible. Then
 configure and verify each crate's Trusted Publisher with owner `LioRael`,
 repository `lenso-audit-log-plugin`, workflow `release-plz.yml`, and no environment.
 Do not enable a token fallback or change publisher settings as part of source
-landing. The four-package allowlist remains fixed after bootstrap; recompute
-the exact registry-derived pending subset before any later authorized dispatch.
+landing. The four-package allowlist remains fixed after bootstrap. Recompute the
+missing versions and approve the exact next stage before any later dispatch.
 
-Publish the changed Capability before Core, then PostgreSQL and D1. A local
+The initial staged order avoids a dependency deadlock:
+
+1. Qualify and separately authorize the existing-name Capability 0.1.1 upgrade.
+   Its live workflow stage selects only `lenso-capability-audit-log`.
+2. After that version is Primary-visible, separately authorize first-name Core
+   0.1.0, then D1 0.1.0 bootstrap from their exact reviewed archives.
+3. After those dependencies and publisher settings are verified, qualify and
+   separately authorize the remaining PostgreSQL 0.1.1 upgrade.
+
+The workflow cannot implicitly perform the bootstrap step. A local
 Git-patched source proof is separate from normalized registry verification,
 registry visibility and actual profile qualification. Never use `--no-verify`
 or republish modified bytes under an already registered package version.

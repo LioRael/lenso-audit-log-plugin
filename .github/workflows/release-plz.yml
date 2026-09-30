@@ -71,7 +71,7 @@ jobs:
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release
-          config: .github/release-owner.toml
+          config: ${{ runner.temp }}/release-approved.toml
           version: 0.3.160
           dry_run: true
       - name: Validate dry-run records
@@ -116,7 +116,7 @@ jobs:
         uses: release-plz/action@2eb1d8bcb770b4c48ccfaad919734b38b51958c9 # v0.5.131
         with:
           command: release
-          config: .github/release-owner.toml
+          config: ${{ runner.temp }}/release-approved.toml
           version: 0.3.160
       - name: Reconcile reported packages, Primary versions and exact source tags
         if: ${{ !cancelled() && steps.release.outcome != 'skipped' }}

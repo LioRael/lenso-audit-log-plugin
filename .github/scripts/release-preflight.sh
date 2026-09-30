@@ -4,6 +4,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/release-set.sh"
 : "${RELEASE_SHA:?}" "${RELEASE_SET:?}" "${RUNNER_TEMP:?}"
 selected="$(release_set_canonical "$RELEASE_SET")"
+python3 "$SCRIPT_DIR/release-config.py" --release-set "$selected" --output "$RUNNER_TEMP/release-approved.toml"
 packages=()
 while IFS= read -r package; do packages+=(-p "$package"); done < <(jq -r '.[].package_name' <<<"$selected")
 if [[ ${#packages[@]} -gt 0 ]]; then cargo package --locked "${packages[@]}"; fi

@@ -37,16 +37,31 @@ while IFS=$'\t' read -r package version; do
     200) ;;
     404)
       pending="$(jq -c --arg package "$package" --arg version "$version" '. + [{package_name:$package,version:$version}]' <<<"$pending")"
-      if [[ "$RELEASE_MODE" == publish ]]; then
-        name_status="$(curl --silent --show-error --location --retry 2 --max-time 20 --output /dev/null --write-out '%{http_code}' "https://crates.io/api/v1/crates/${package}")" || fail "crate namespace read failed"
-        [[ "$name_status" == 200 ]] || fail "${package} requires separately authorized first-name bootstrap; this workflow cannot allocate it"
-      fi
       ;;
     *) fail "unexpected registry response ${status} for ${package}@${version}" ;;
   esac
 done < <(jq -r '.[] | [.package_name,.version] | @tsv' <<<"$allowed")
 pending="$(release_set_canonical "$pending")"
-[[ "$release_set" == "$pending" ]] || fail "release_set does not match the registry-derived pending subset: ${pending}"
+jq -e --argjson pending "$pending" 'all(.[]; . as $p | any($pending[]; . == $p))' <<<"$release_set" >/dev/null || fail "approved subset contains a version that is not pending: ${pending}"
+[[ "$pending" == '[]' || "$release_set" != '[]' ]] || fail "select a non-empty approved subset of pending packages"
+if [[ "$RELEASE_MODE" == publish ]]; then
+  while IFS= read -r package; do
+    name_status="$(curl --silent --show-error --location --retry 2 --max-time 20 --output /dev/null --write-out '%{http_code}' "https://crates.io/api/v1/crates/${package}")" || fail "crate namespace read failed"
+    [[ "$name_status" == 200 ]] || fail "${package} requires separately authorized first-name bootstrap; this workflow cannot allocate it"
+  done < <(jq -r '.[].package_name' <<<"$release_set")
+fi
+
+# A staged Capability release must not depend on a future new-name bootstrap.
+while IFS= read -r package; do
+  while IFS= read -r dependency; do
+    dependency_record="$(jq -c --arg name "$dependency" '[.[] | select(.package_name == $name)] | .[0] // empty' <<<"$allowed")"
+    [[ -n "$dependency_record" ]] || continue
+    if jq -e --argjson dependency "$dependency_record" 'any(.[]; . == $dependency)' <<<"$release_set" >/dev/null; then continue; fi
+    dependency_version="$(jq -r .version <<<"$dependency_record")"
+    dependency_status="$(curl --silent --show-error --location --retry 2 --max-time 20 --output /dev/null --write-out '%{http_code}' "https://crates.io/api/v1/crates/${dependency}/${dependency_version}")" || fail "dependency registry read failed"
+    [[ "$dependency_status" == 200 ]] || fail "${package} requires ${dependency}@${dependency_version} selected in this release or already Primary-visible"
+  done < <(jq -r --arg name "$package" '.packages[] | select(.name == $name) | .dependencies[]? | select(.kind != "dev") | .name' <<<"$metadata")
+done < <(jq -r '.[].package_name' <<<"$release_set")
 
 workflow_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml" --jq '.id')" || fail "CI workflow read failed"
 [[ "$workflow_id" =~ ^[1-9][0-9]*$ ]] || fail "invalid CI workflow identity"
