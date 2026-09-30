@@ -433,7 +433,7 @@ async fn storage_failure_remains_a_runtime_failure() {
             audit::AuditLogAppendEventInvocationError::Runtime(
                 RuntimeFailure::PluginFailure { detail }
             )
-        )) if detail.contains("fixture Audit storage is unavailable")
+        )) if detail.contains("Audit storage unavailable") && detail.contains("may have committed")
     ));
 }
 

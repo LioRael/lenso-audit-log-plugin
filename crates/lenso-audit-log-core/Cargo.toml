@@ -1,0 +1,24 @@
+[package]
+name = "lenso-audit-log-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+lenso.workspace = true
+lenso-contract-runtime.workspace = true
+lenso-capability-audit-log = { path = "../lenso-capability-audit-log", version = "0.1.1" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+uuid.workspace = true
+
+[lints]
+workspace = true

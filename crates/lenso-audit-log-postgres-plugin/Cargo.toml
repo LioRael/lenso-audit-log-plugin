@@ -21,6 +21,7 @@ plugin-id = "lenso.audit-log.postgres"
 root-slot = "audit"
 
 [dependencies]
+lenso-audit-log-core = { path = "../lenso-audit-log-core", version = "0.1.0" }
 chrono.workspace = true
 lenso.workspace = true
 lenso-capability-audit-log = { path = "../lenso-capability-audit-log", version = "0.1.1" }

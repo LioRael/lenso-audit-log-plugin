@@ -20,10 +20,8 @@ use std::{
 use lenso::prelude::*;
 use lenso_capability_audit_log as audit;
 use lenso_capability_audit_log::{
-    AppendEventError, AppendEventRequest, AppendEventResponse, AppendEventResponseEvent,
-    GetEventError, GetEventRequest, GetEventResponse, GetEventResponseEvent, ListEventsError,
-    ListEventsRequest, ListEventsResponse, ListEventsResponseEventsItem,
-    ListEventsResponseNextCursor,
+    AppendEventError, AppendEventRequest, AppendEventResponse, GetEventError, GetEventRequest,
+    GetEventResponse, ListEventsError, ListEventsRequest, ListEventsResponse,
 };
 use lenso_capability_secrets as secrets;
 use lenso_capability_secrets::{ResolveRequest, SecretsClient, SecretsInvocationError};
@@ -31,11 +29,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-use crate::{
-    model::{EventFilter, NewAuditEvent, ProjectionError, StoredEvent, validate_event_id},
-    schema::schema_plan,
-    storage::{AuditStore, AuditStoreError},
-};
+use crate::{schema::schema_plan, storage::AuditStore};
 
 pub use operator::{
     AuditLogOperator, AuditLogOperatorError, LegacyAdoptionOutcome, LegacyAdoptionRefusal,
@@ -55,13 +49,7 @@ pub struct AuditLogConfig {
     reader_scopes: BTreeMap<String, Vec<AuditReadScope>>,
 }
 
-/// An exact opaque scope ceiling for a trusted read adapter.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct AuditReadScope {
-    pub kind: String,
-    pub id: String,
-}
+pub use lenso_audit_log_core::AuditReadScope;
 
 impl AuditLogConfig {
     /// Creates validated Audit Log policy for exact writer and reader Instances.
@@ -91,12 +79,14 @@ impl AuditLogConfig {
         Ok(self)
     }
 
+    #[cfg(test)]
     fn reader_admits_scope(&self, reader: &str, kind: Option<&str>, id: Option<&str>) -> bool {
-        self.reader_scopes.get(reader).is_none_or(|scopes| {
-            scopes
-                .iter()
-                .any(|scope| Some(scope.kind.as_str()) == kind && Some(scope.id.as_str()) == id)
-        })
+        lenso_audit_log_core::AuditPolicy {
+            writer_instances: self.writer_instances.clone(),
+            reader_instances: self.reader_instances.clone(),
+            reader_scopes: self.reader_scopes.clone(),
+        }
+        .reader_admits_scope(reader, kind, id)
     }
 
     fn validate(&self) -> Result<(), AuditLogConfigError> {
@@ -197,127 +187,38 @@ impl PostgresAuditLogPlugin {
         context: Ctx,
         request: AppendEventRequest,
     ) -> PluginResult<AppendEventResponse, AppendEventError> {
-        let Some(source_instance) =
-            Self::authorized_caller(&context, &self.config.writer_instances)
-        else {
-            return Err(PluginError::domain(AppendEventError::Unauthorized));
-        };
-        let event =
-            NewAuditEvent::from_request(request, source_instance).map_err(PluginError::domain)?;
-        let stored = self
-            .prepared()
-            .map_err(PluginError::runtime)?
-            .store
-            .append_event(event)
-            .await
-            .map_err(|error| match error {
-                storage::AuditStoreError::Repository(
-                    repository::RepositoryError::IdempotencyConflict,
-                ) => PluginError::domain(AppendEventError::IdempotencyConflict),
-                other @ storage::AuditStoreError::Repository(_) => {
-                    PluginError::runtime(storage_failure(&other))
-                }
-                #[cfg(test)]
-                other @ storage::AuditStoreError::FixtureUnavailable => {
-                    PluginError::runtime(storage_failure(&other))
-                }
-            })?;
-        let event = stored
-            .project::<AppendEventResponseEvent>()
-            .map_err(|error| PluginError::runtime(projection_failure(&error)))?;
-        Ok(AppendEventResponse { event })
+        self.service().append_event(context, request).await
     }
-
     async fn get_event(
         &self,
         context: Ctx,
         request: GetEventRequest,
     ) -> PluginResult<GetEventResponse, GetEventError> {
-        let reader = Self::authorized_caller(&context, &self.config.reader_instances)
-            .ok_or_else(|| PluginError::domain(GetEventError::Unauthorized))?;
-        validate_event_id(&request.id).map_err(PluginError::domain)?;
-        let stored = self
-            .prepared()
-            .map_err(PluginError::runtime)?
-            .store
-            .get_event(&request.id)
-            .await
-            .map_err(|error| PluginError::runtime(storage_failure(&error)))?
-            .ok_or_else(|| PluginError::domain(GetEventError::NotFound))?;
-        if !self.config.reader_admits_scope(
-            reader,
-            stored.scope_type.as_deref(),
-            stored.scope_id.as_deref(),
-        ) {
-            return Err(PluginError::domain(GetEventError::NotFound));
-        }
-        let event = stored
-            .project::<GetEventResponseEvent>()
-            .map_err(|error| PluginError::runtime(projection_failure(&error)))?;
-        Ok(GetEventResponse { event })
+        self.service().get_event(context, request).await
     }
-
     async fn list_events(
         &self,
         context: Ctx,
         request: ListEventsRequest,
     ) -> PluginResult<ListEventsResponse, ListEventsError> {
-        let reader = Self::authorized_caller(&context, &self.config.reader_instances)
-            .ok_or_else(|| PluginError::domain(ListEventsError::Unauthorized))?;
-        if !self.config.reader_admits_scope(
-            reader,
-            request.scope_type.as_deref(),
-            request.scope_id.as_deref(),
-        ) {
-            return Err(PluginError::domain(ListEventsError::Unauthorized));
-        }
-        let filter = EventFilter::from_request(request).map_err(PluginError::domain)?;
-        let mut stored = self
-            .prepared()
-            .map_err(PluginError::runtime)?
-            .store
-            .list_events(&filter)
-            .await
-            .map_err(|error| PluginError::runtime(storage_failure(&error)))?;
-        let limit = usize::try_from(filter.limit).expect("validated list limit fits usize");
-        let has_next_page = stored.len() > limit;
-        if has_next_page {
-            stored.truncate(limit);
-        }
-        let next_cursor = if has_next_page {
-            stored.last().map(|event| ListEventsResponseNextCursor {
-                occurred_at: event.occurred_at.to_rfc3339(),
-                id: event.id.clone(),
-            })
-        } else {
-            None
-        };
-        let events = stored
-            .iter()
-            .map(StoredEvent::project::<ListEventsResponseEventsItem>)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|error| PluginError::runtime(projection_failure(&error)))?;
-        Ok(ListEventsResponse {
-            events,
-            next_cursor,
-        })
+        self.service().list_events(context, request).await
     }
 }
 
 impl PostgresAuditLogPlugin {
-    fn authorized_caller<'a>(context: &'a Ctx, allowed: &[String]) -> Option<&'a str> {
-        context
-            .caller_instance()
-            .filter(|caller| allowed.iter().any(|candidate| candidate == caller))
-    }
-
-    fn prepared(&self) -> Result<PreparedAuditLog, RuntimeFailure> {
-        self.state
-            .borrow()
-            .clone()
-            .ok_or(RuntimeFailure::PluginFailure {
-                detail: "Audit Log Plugin is not prepared".to_owned(),
-            })
+    fn service(&self) -> lenso_audit_log_core::AuditService<AuditStore> {
+        lenso_audit_log_core::AuditService {
+            config: lenso_audit_log_core::AuditPolicy {
+                writer_instances: self.config.writer_instances.clone(),
+                reader_instances: self.config.reader_instances.clone(),
+                reader_scopes: self.config.reader_scopes.clone(),
+            },
+            store: self
+                .state
+                .borrow()
+                .as_ref()
+                .map_or(AuditStore::Unprepared, |prepared| prepared.store.clone()),
+        }
     }
 }
 
@@ -370,18 +271,6 @@ impl Lifecycle for PostgresAuditLogPlugin {
             prepared.store.close().await;
         }
         Ok(())
-    }
-}
-
-fn storage_failure(error: &AuditStoreError) -> RuntimeFailure {
-    RuntimeFailure::PluginFailure {
-        detail: error.to_string(),
-    }
-}
-
-fn projection_failure(error: &ProjectionError) -> RuntimeFailure {
-    RuntimeFailure::Internal {
-        detail: format!("Audit Log generated projection failed: {error}"),
     }
 }
 
