@@ -1,0 +1,21 @@
+crates/lenso-audit-log-postgres-plugin/src/tests.rs
+  s_f4202e28c6b5b1::t_e6a329303539a0 180-182,366-367
+  s_f4202e28c6b5b1::t_0151f509e19375 177-179,365,368-369
+  s_f4202e28c6b5b1::t_fa6032496f807d 183-188,356,370-377
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47de93e62acd8bf0d84a10b900ec36f8eb24f802",
+  "prompts": {},
+  "sessions": {
+    "s_f4202e28c6b5b1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ee9e-623b-7d12-a648-d8b462390eec",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "LioRael <leo@lenso.dev>"
+    }
+  }
+}
