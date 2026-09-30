@@ -21,3 +21,17 @@ test("a fresh bounded read after readiness observes a concurrent persisted event
  current={event_json:JSON.stringify(event("fresh"))};
  assert.equal((await store.get("fresh")).id,"fresh");assert.equal(sessions,3);
 });
+
+test("failed or malformed list receipts cannot become a known empty audit result",async()=>{
+ const db=database();await setup(db);
+ const store=create(db,scope(),{profile:"workers-d1"});await store.append(input("persisted"));
+ const before=db.calls.batches;
+ for(const receipt of [{success:false,results:[]},{results:[]},{success:true,results:null},{success:true}]){
+  db.calls.nextReadReceipt=receipt;
+  await assert.rejects(store.list({limit:1}),/audit_read_unavailable/);
+ }
+ assert.equal(db.calls.batches,before);
+ assert.deepEqual((await store.list({limit:1})).map(row=>row.id),["persisted"]);
+ assert.deepEqual(await store.list({scope_id:"absent",limit:1}),[]);
+ db.close();
+});

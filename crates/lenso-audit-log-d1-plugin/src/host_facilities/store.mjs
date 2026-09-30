@@ -43,7 +43,9 @@ export function create(database,scope,configuration) {
       if(filter.cursor){conditions.push("(occurred_key<? OR (occurred_key=? AND id<?))");values.push(filter.cursor.occurred_at,filter.cursor.occurred_at,filter.cursor.id);}
       if(!Number.isSafeInteger(filter.limit)||filter.limit<1||filter.limit>200)throw new Error("invalid_audit_limit");
       const query=`SELECT event_json FROM audit_events${conditions.length?" WHERE "+conditions.join(" AND "):""} ORDER BY occurred_key DESC,id DESC LIMIT ?`;
-      const rows=await session.prepare(query).bind(...values,filter.limit+1).all();return rows.results.map(decode);
+      const rows=await session.prepare(query).bind(...values,filter.limit+1).all();
+      if(rows?.success!==true||!Array.isArray(rows.results))throw new Error("audit_read_unavailable");
+      return rows.results.map(decode);
     }),
   });
 }
