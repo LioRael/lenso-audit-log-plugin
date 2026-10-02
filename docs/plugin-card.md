@@ -132,7 +132,9 @@ No Kernel, Runtime Driver, or Host source branch is changed. Keeping the package
 linked but unselected is inert; a composition test starts successfully without
 the Audit Log Instance or any Audit capability binding.
 
-## vNext break
+<a id="vnext-break"></a>
+
+## Breaking changes from v0.3
 
 The historical direct Rust writer/read/admin surface is intentionally absent.
 Legacy-lane applications must migrate their composition and consumers to the

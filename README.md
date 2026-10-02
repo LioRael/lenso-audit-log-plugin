@@ -116,7 +116,9 @@ the deletion boundary.
 Publication and crates.io Trusted Publisher setup are documented in
 [the release process](docs/release-process.md).
 
-## vNext compatibility boundary
+<a id="vnext-compatibility-boundary"></a>
+
+## v0.3 migration compatibility boundary
 
 This is a deliberate breaking migration. The old linked package and Rust call
 surface are not retained as a compatibility shim. Applications on the v0.3
